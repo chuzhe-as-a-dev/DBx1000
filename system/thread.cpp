@@ -23,7 +23,7 @@
 void thread_t::init(uint64_t thd_id, workload* workload) {
   _thd_id = thd_id;
   _wl = workload;
-  srand48_r((_thd_id + 1) * get_sys_clock(), &buffer);
+  buffer.init((_thd_id + 1) * get_sys_clock());
   _abort_buffer_size = ABORT_BUFFER_SIZE;
   _abort_buffer = (AbortBufferEntry*)_mm_malloc(
       sizeof(AbortBufferEntry) * _abort_buffer_size, 64);
@@ -191,8 +191,7 @@ RC thread_t::run() {
     if (rc == Abort) {
       uint64_t penalty = 0;
       if (ABORT_PENALTY != 0) {
-        double r;
-        drand48_r(&buffer, &r);
+        double r = buffer.next_double();
         penalty = r * ABORT_PENALTY;
       }
       if (!_abort_buffer_enable || wl == WL::Test) {

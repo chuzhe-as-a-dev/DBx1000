@@ -1,6 +1,6 @@
 #include "tpcc_helper.h"
 
-drand48_data** tpcc_buffer;
+fast_random** tpcc_buffer;
 
 uint64_t distKey(uint64_t d_id, uint64_t d_w_id) {
   return d_w_id * DIST_PER_WARE + d_id;
@@ -52,8 +52,7 @@ uint64_t Lastname(uint64_t num, char* name) {
 }
 
 uint64_t RAND(uint64_t max, uint64_t thd_id) {
-  int64_t rint64 = 0;
-  lrand48_r(tpcc_buffer[thd_id], &rint64);
+  int64_t rint64 = tpcc_buffer[thd_id]->next_int64();
   return rint64 % max;
 }
 

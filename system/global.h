@@ -18,6 +18,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <random>
 #include <set>
 #include <sstream>
 #include <string>
@@ -45,6 +46,19 @@ typedef uint64_t UInt64;
 typedef int64_t SInt64;
 
 typedef uint64_t ts_t;  // time stamp type
+
+struct fast_random {
+  void init(uint64_t seed) { engine.seed(seed); }
+
+  double next_double() { return std::generate_canonical<double, 53>(engine); }
+
+  int64_t next_int64() {
+    return static_cast<int64_t>(engine() & 0x7fffffffffffffffULL);
+  }
+
+ private:
+  std::mt19937_64 engine;
+};
 
 /******************************************/
 // Global Data Structure

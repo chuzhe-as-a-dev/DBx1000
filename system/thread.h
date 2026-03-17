@@ -32,7 +32,7 @@ class thread_t {
   ts_t get_next_ts();
 
   RC runTest(txn_man* txn);
-  drand48_data buffer;
+  fast_random buffer;
 
   // A restart buffer for aborted txns.
   struct AbortBufferEntry {

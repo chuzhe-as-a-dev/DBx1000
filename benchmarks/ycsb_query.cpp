@@ -55,8 +55,7 @@ uint64_t ycsb_query::zipf(uint64_t n, double theta) {
   double alpha = 1 / (1 - theta);
   double zetan = denom;
   double eta = (1 - pow(2.0 / n, 1 - theta)) / (1 - zeta_2_theta / zetan);
-  double u;
-  drand48_r(&_query_thd->buffer, &u);
+  double u = _query_thd->buffer.next_double();
   double uz = u * zetan;
   if (uz < 1) {
     return 1;
@@ -86,8 +85,8 @@ void ycsb_query::gen_requests(uint64_t thd_id, workload* h_wl) {
   part_num = 0;
   double r = 0;
   int64_t rint64 = 0;
-  drand48_r(&_query_thd->buffer, &r);
-  lrand48_r(&_query_thd->buffer, &rint64);
+  r = _query_thd->buffer.next_double();
+  rint64 = _query_thd->buffer.next_int64();
   if (r < g_perc_multi_part) {
     for (UInt32 i = 0; i < g_part_per_txn; i++) {
       if (i == 0 && FIRST_PART_LOCAL) {
@@ -116,8 +115,7 @@ void ycsb_query::gen_requests(uint64_t thd_id, workload* h_wl) {
 
   int rid = 0;
   for (UInt32 tmp = 0; tmp < g_req_per_query; tmp++) {
-    double r;
-    drand48_r(&_query_thd->buffer, &r);
+    double r = _query_thd->buffer.next_double();
     ycsb_request* req = &requests[rid];
     if (r < g_read_perc) {
       req->rtype = RD;

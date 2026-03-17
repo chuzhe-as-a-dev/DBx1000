@@ -49,6 +49,7 @@ int main(int argc, char* argv[]) {
   g_threads = new thread_t*[thd_cnt];
   for (uint32_t i = 0; i < thd_cnt; i++) {
     g_threads[i] = (thread_t*)_mm_malloc(sizeof(thread_t), 64);
+    new (g_threads[i]) thread_t();
   }
   // query_queue should be the last one to be initialized!!!
   // because it collects txn latency

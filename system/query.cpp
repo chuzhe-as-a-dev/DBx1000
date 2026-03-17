@@ -46,6 +46,7 @@ void Query_queue::init(workload* h_wl) {
 
 void Query_queue::init_per_thread(int thread_id) {
   all_queries[thread_id] = (Query_thd*)_mm_malloc(sizeof(Query_thd), 64);
+  new (all_queries[thread_id]) Query_thd();
   all_queries[thread_id]->init(_wl, thread_id);
 }
 
@@ -84,7 +85,7 @@ void Query_thd::init(workload* h_wl, int thread_id) {
       QT* q;
       if constexpr (W == WL::Ycsb) {
         q = (QT*)mem_allocator.alloc(sizeof(QT) * request_cnt, thread_id);
-        srand48_r(thread_id + 1, &buffer);
+        buffer.init(thread_id + 1);
       } else {
         q = (QT*)_mm_malloc(sizeof(QT) * request_cnt, 64);
       }

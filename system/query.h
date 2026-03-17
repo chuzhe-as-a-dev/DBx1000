@@ -26,7 +26,7 @@ class Query_thd {
   using QueryType = std::conditional_t<wl == WL::Ycsb, ycsb_query, tpcc_query>;
   QueryType* queries;
   char pad[CL_SIZE - sizeof(void*) - sizeof(int)];
-  drand48_data buffer;
+  fast_random buffer;
 };
 
 // TODO we assume a separate task queue for each thread in order to avoid
