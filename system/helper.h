@@ -20,10 +20,22 @@
 #define ATOM_SUB_FETCH(dest, value) __sync_sub_and_fetch(&(dest), value)
 
 #define COMPILER_BARRIER asm volatile("" ::: "memory");
-#define PAUSE          \
-  {                    \
-    __asm__("pause;"); \
+#if defined(__i386__) || defined(__x86_64__)
+#define PAUSE                        \
+  {                                  \
+    __asm__ __volatile__("pause");   \
   }
+#elif defined(__aarch64__) || defined(__arm64__)
+#define PAUSE                        \
+  {                                  \
+    __asm__ __volatile__("yield");   \
+  }
+#else
+#define PAUSE            \
+  {                      \
+    sched_yield();       \
+  }
+#endif
 // #define PAUSE usleep(1);
 
 /************************************************/
