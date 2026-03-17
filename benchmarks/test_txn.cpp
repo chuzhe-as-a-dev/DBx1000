@@ -29,7 +29,7 @@ RC TestTxnMan::testReadwrite(int access_num) {
     char str[] = "hello";
     row_local->set_value(0, 1234);
     row_local->set_value(1, 1234.5);
-    row_local->set_value(2, 8589934592UL);
+    row_local->set_value(2, static_cast<uint64_t>(8589934592ULL));
     row_local->set_value(3, str);
   } else {
     int v1;
@@ -45,7 +45,7 @@ RC TestTxnMan::testReadwrite(int access_num) {
 
     assert(v1 == 1234);
     assert(v2 == 1234.5);
-    assert(v3 == 8589934592UL);
+    assert(v3 == static_cast<uint64_t>(8589934592ULL));
     assert(strcmp(v4, "hello") == 0);
   }
   rc = finish(rc);
@@ -70,7 +70,7 @@ RC TestTxnMan::testConflict(int access_num) {
       char str[] = "hello";
       row_local->set_value(0, 1234);
       row_local->set_value(1, 1234.5);
-      row_local->set_value(2, 8589934592UL);
+      row_local->set_value(2, static_cast<uint64_t>(8589934592ULL));
       row_local->set_value(3, str);
       sleep(1);
     } else {
