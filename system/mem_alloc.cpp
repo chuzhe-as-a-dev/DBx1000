@@ -3,6 +3,14 @@
 #include "global.h"
 #include "helper.h"
 
+namespace {
+
+int thread_bucket(pthread_t pid, int bucket_cnt) {
+  return static_cast<int>(std::hash<pthread_t>{}(pid) % bucket_cnt);
+}
+
+}  // namespace
+
 // Assume the data is strided across the L2 slices, stride granularity
 // is the size of a page
 void mem_alloc::init(uint64_t part_cnt, uint64_t bytes_per_part) {
@@ -13,7 +21,7 @@ void mem_alloc::init(uint64_t part_cnt, uint64_t bytes_per_part) {
   }
   pid_arena = new std::pair<pthread_t, int>[_bucket_cnt];
   for (int i = 0; i < _bucket_cnt; i++) {
-    pid_arena[i] = std::make_pair(0, 0);
+    pid_arena[i] = std::make_pair<pthread_t, int>(0, 0);
   }
 
   if (THREAD_ALLOC) {
@@ -87,9 +95,10 @@ void mem_alloc::register_thread(int thd_id) {
   if (THREAD_ALLOC) {
     pthread_mutex_lock(&map_lock);
     pthread_t pid = pthread_self();
-    int entry = pid % _bucket_cnt;
+    int entry = thread_bucket(pid, _bucket_cnt);
     while (pid_arena[entry].first != 0) {
-      printf("conflict at entry %d (pid=%ld)\n", entry, pid);
+      printf("conflict at entry %d (pid_hash=%zu)\n", entry,
+             std::hash<pthread_t>{}(pid));
       entry = (entry + 1) % _bucket_cnt;
     }
     pid_arena[entry].first = pid;
@@ -118,7 +127,7 @@ int mem_alloc::get_arena_id() {
   int arena_id;
 #if NOGRAPHITE
   pthread_t pid = pthread_self();
-  int entry = pid % _bucket_cnt;
+  int entry = thread_bucket(pid, _bucket_cnt);
   while (pid_arena[entry].first != pid) {
     if (pid_arena[entry].first == 0) {
       break;
