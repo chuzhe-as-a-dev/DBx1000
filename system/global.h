@@ -4,6 +4,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <barrier>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -16,6 +17,7 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
@@ -58,7 +60,7 @@ extern VLLMan vll_man;
 
 extern bool volatile warmup_finish;
 extern bool volatile enable_thread_mem_pool;
-extern pthread_barrier_t warmup_bar;
+extern std::unique_ptr<std::barrier<>> warmup_bar;
 
 /******************************************/
 // Global Parameter

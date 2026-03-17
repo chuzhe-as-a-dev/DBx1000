@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
   if constexpr (wl != WL::Test) {
     query_queue->init(m_wl);
   }
-  pthread_barrier_init(&warmup_bar, NULL, g_thread_cnt);
+  warmup_bar = std::make_unique<std::barrier<>>(g_thread_cnt);
   printf("query_queue initialized!\n");
   if constexpr (cc_alg == CCAlg::Hstore) {
     part_lock_man.init();
@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     printf("WARMUP finished!\n");
   }
   warmup_finish = true;
-  pthread_barrier_init(&warmup_bar, NULL, g_thread_cnt);
+  warmup_bar = std::make_unique<std::barrier<>>(g_thread_cnt);
 
   // spawn and run txns again.
   int64_t starttime = get_server_clock();

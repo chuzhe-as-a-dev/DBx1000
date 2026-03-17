@@ -67,9 +67,9 @@ RC thread_t::run() {
   if (warmup_finish) {
     mem_allocator.register_thread(_thd_id);
   }
-  pthread_barrier_wait(&warmup_bar);
+  warmup_bar->arrive_and_wait();
   stats.init(get_thd_id());
-  pthread_barrier_wait(&warmup_bar);
+  warmup_bar->arrive_and_wait();
 
   myrand rdm;
   rdm.init(get_thd_id());
