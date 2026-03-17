@@ -13,7 +13,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Threads REQUIRED)
 
 # Global compile flags — apply to all targets
-add_compile_options(-Wall -Werror)
+add_compile_options(-Wall)
+if(NOT APPLE)
+    add_compile_options(-Werror)
+endif()
 add_compile_definitions(NOGRAPHITE=1)
 
 option(DBX_TEST_MODE "Use smaller table sizes for testing" OFF)
@@ -26,14 +29,15 @@ if(UNIX AND NOT APPLE)
     find_library(RT_LIBRARY rt)
 endif()
 
-# jemalloc: prefer bundled static lib, fall back to system
+# jemalloc: prefer bundled static lib on Linux, fall back to system (required on macOS)
 set(DBX_LOCAL_JEMALLOC "${PROJECT_SOURCE_DIR}/libs/libjemalloc.a")
-if(EXISTS "${DBX_LOCAL_JEMALLOC}")
+if(EXISTS "${DBX_LOCAL_JEMALLOC}" AND NOT APPLE)
     add_library(dbx_jemalloc STATIC IMPORTED GLOBAL)
     set_target_properties(dbx_jemalloc PROPERTIES IMPORTED_LOCATION "${DBX_LOCAL_JEMALLOC}")
     set(DBX_USE_LOCAL_JEMALLOC TRUE)
 else()
-    find_library(JEMALLOC_LIBRARY NAMES jemalloc REQUIRED)
+    find_library(JEMALLOC_LIBRARY NAMES jemalloc REQUIRED
+        HINTS /opt/homebrew/opt/jemalloc/lib /usr/local/opt/jemalloc/lib)
     add_library(dbx_jemalloc INTERFACE IMPORTED GLOBAL)
     set_target_properties(dbx_jemalloc PROPERTIES INTERFACE_LINK_LIBRARIES "${JEMALLOC_LIBRARY}")
     set(DBX_USE_LOCAL_JEMALLOC FALSE)
