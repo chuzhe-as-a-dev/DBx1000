@@ -13,9 +13,12 @@ The concurrency control scalability study is described in the following paper.
 Build & Test
 ------------
 
+DBx1000 uses CMake as its supported build system.
+
 To build the database.
 
-    make -j
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    cmake --build build --parallel
 
 To test the database
 
@@ -34,14 +37,14 @@ DBMS configurations can be changed in the config.h file. Please refer to README 
                         
 Configurations can also be specified as command argument at runtime. Run the following command for a full list of program argument. 
     
-    ./rundb -h
+    ./build/rundb -h
 
 Run
 ---
 
 The DBMS can be run with 
 
-    ./rundb
+    ./build/rundb
 
 Outputs
 -------

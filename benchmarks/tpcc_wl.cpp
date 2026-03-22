@@ -15,7 +15,7 @@
 
 RC tpcc_wl::init() {
 	workload::init();
-	string path = "./benchmarks/";
+	string path = "../benchmarks/";
 #if TPCC_SMALL
 	path += "TPCC_short_schema.txt";
 #else

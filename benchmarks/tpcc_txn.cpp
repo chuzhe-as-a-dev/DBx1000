@@ -30,6 +30,7 @@ RC tpcc_txn_man::run_txn(base_query * query) {
 			return run_stock_level(m_query); break;*/
 		default:
 			assert(false);
+			exit(-1);
 	}
 }
 

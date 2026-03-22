@@ -14,6 +14,7 @@ RC TestTxnMan::run_txn(int type, int access_num) {
 		return testConflict(access_num);
 	default:
 		assert(false);
+		exit(-1);
 	}
 }
 
@@ -40,6 +41,7 @@ RC TestTxnMan::testReadwrite(int access_num) {
 	    row_local->get_value(1, v2);
     	row_local->get_value(2, v3);
 	    v4 = row_local->get_value(3);
+	    (void)v4;
 
     	assert(v1 == 1234);
 	    assert(v2 == 1234.5);

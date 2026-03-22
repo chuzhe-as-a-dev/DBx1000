@@ -21,7 +21,7 @@ int ycsb_wl::next_tid;
 RC ycsb_wl::init() {
 	workload::init();
 	next_tid = 0;
-	string path = "./benchmarks/YCSB_schema.txt";
+	string path = "../benchmarks/YCSB_schema.txt";
 	init_schema( path );
 	
 	init_table_parallel();
@@ -51,10 +51,11 @@ RC ycsb_wl::init_table() {
                 goto ins_done;
             row_t * new_row = NULL;
 			uint64_t row_id;
-            rc = the_table->get_new_row(new_row, part_id, row_id); 
+            rc = the_table->get_new_row(new_row, part_id, row_id);
             // TODO insertion of last row may fail after the table_size
             // is updated. So never access the last record in a table
 			assert(rc == RCOK);
+			(void)rc;
 			uint64_t primary_key = total_row;
 			new_row->set_primary_key(primary_key);
             new_row->set_value(0, &primary_key);
@@ -75,6 +76,7 @@ RC ycsb_wl::init_table() {
             uint64_t idx_key = primary_key;
             rc = the_index->index_insert(idx_key, m_item, part_id);
             assert(rc == RCOK);
+            (void)rc;
             total_row ++;
         }
     }
@@ -122,8 +124,9 @@ void * ycsb_wl::init_table_slice() {
 		row_t * new_row = NULL;
 		uint64_t row_id;
 		int part_id = key_to_part(key);
-		rc = the_table->get_new_row(new_row, part_id, row_id); 
+		rc = the_table->get_new_row(new_row, part_id, row_id);
 		assert(rc == RCOK);
+		(void)rc;
 		uint64_t primary_key = key;
 		new_row->set_primary_key(primary_key);
 		new_row->set_value(0, &primary_key);
@@ -144,6 +147,7 @@ void * ycsb_wl::init_table_slice() {
 		
 		rc = the_index->index_insert(idx_key, m_item, part_id);
 		assert(rc == RCOK);
+		(void)rc;
 	}
 	return NULL;
 }

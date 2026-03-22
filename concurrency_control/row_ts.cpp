@@ -88,7 +88,7 @@ TsReqEntry * Row_ts::debuffer_req( TsType type, txn_man * txn, ts_t ts ) {
 		case R_REQ : queue = &readreq; break;
 		case P_REQ : queue = &prereq; break;
 		case W_REQ : queue = &writereq; break;
-		default: assert(false);
+		default: assert(false); exit(-1);
 	}
 
 	TsReqEntry * req = *queue;
@@ -136,7 +136,7 @@ ts_t Row_ts::cal_min(TsType type) {
 		case R_REQ : queue = readreq; break;
 		case P_REQ : queue = prereq; break;
 		case W_REQ : queue = writereq; break;
-		default: assert(false);
+		default: assert(false); exit(-1);
 	}
 	ts_t new_min_pts = UINT64_MAX;
 	TsReqEntry * req = queue;

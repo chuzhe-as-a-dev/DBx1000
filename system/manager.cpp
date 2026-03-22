@@ -48,6 +48,7 @@ Manager::get_ts(uint64_t thread_id) {
 		time = CarbonGetTimestamp();
 #else
 		assert(false);
+		exit(-1);
 #endif
 		break;
 	case TS_CLOCK :
@@ -55,6 +56,7 @@ Manager::get_ts(uint64_t thread_id) {
 		break;
 	default :
 		assert(false);
+		exit(-1);
 	}
 	INC_STATS(thread_id, time_ts_alloc, get_sys_clock() - starttime);
 	return time;

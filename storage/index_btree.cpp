@@ -15,6 +15,7 @@ RC index_btree::init(uint64_t part_cnt) {
 		RC rc;
 		rc = make_lf(part_id, roots[part_id]);
 		assert (rc == RCOK);
+		(void)rc;
 	}
 	return RCOK;
 }
@@ -117,6 +118,7 @@ RC index_btree::index_insert(idx_key_t key, itemid_t * item, int part_id) {
 	RC rc = RCOK;
 	bt_node * root = find_root(params.part_id);
 	assert(root != NULL);
+	(void)root;
 	int depth = 0;
 	// TODO tree depth < 100
 	bt_node * ex_list[100];
@@ -232,6 +234,7 @@ bool index_btree::latch_node(bt_node * node, latch_t latch_type) {
 //	if ( g_cc_alg != HSTORE ) 
 	bool ok = ATOM_CAS(node->latch, true, false);
 	assert(ok);
+	(void)ok;
 //		pthread_mutex_unlock(&node->locked);
 //		assert(ATOM_CAS(node->locked, true, false));
 	return success;
@@ -256,6 +259,7 @@ latch_t index_btree::release_latch(bt_node * node) {
 //	if ( g_cc_alg != HSTORE ) 
 	bool ok = ATOM_CAS(node->latch, true, false);
 	assert(ok);
+	(void)ok;
 //		pthread_mutex_unlock(&node->locked);
 //		assert(ATOM_CAS(node->locked, true, false));
 	return type;
@@ -281,6 +285,7 @@ RC index_btree::upgrade_latch(bt_node * node) {
 //	if ( g_cc_alg != HSTORE ) 
 	bool ok = ATOM_CAS(node->latch, true, false);
 	assert(ok);
+	(void)ok;
 //		pthread_mutex_unlock(&node->locked);
 //		assert( ATOM_CAS(node->locked, true, false) );
 	if (success) return RCOK;

@@ -24,6 +24,7 @@ IndexHash::init(int part_cnt, table_t * table, uint64_t bucket_cnt) {
 
 bool IndexHash::index_exist(idx_key_t key) {
 	assert(false);
+	exit(-1);
 }
 
 void 
@@ -35,6 +36,7 @@ void
 IndexHash::release_latch(BucketHeader * bucket) {
 	bool ok = ATOM_CAS(bucket->locked, true, false);
 	assert(ok);
+	(void)ok;
 }
 
 	

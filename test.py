@@ -13,6 +13,8 @@ def replace(filename, pattern, replacement):
 
 jobs = {}
 dbms_cfg = ["config-std.h", "config.h"]
+build_dir = "build"
+binary = os.path.join(build_dir, "rundb")
 algs = ['DL_DETECT', 'NO_WAIT', 'HEKATON', 'SILO', 'TICTOC']
 def insert_job(alg, workload):
 	jobs[alg + '_' + workload] = {
@@ -28,8 +30,10 @@ def test_compile(job):
 		pattern = r"\#define\s*" + re.escape(param) + r'.*'
 		replacement = "#define " + param + ' ' + str(value)
 		replace(dbms_cfg[1], pattern, replacement)
-	os.system("make clean > temp.out 2>&1")
-	ret = os.system("make -j8 > temp.out 2>&1")
+	os.system("rm -rf %s temp.out" % build_dir)
+	ret = os.system("cmake -S . -B %s -DCMAKE_BUILD_TYPE=RelWithDebInfo > temp.out 2>&1" % build_dir)
+	if ret == 0:
+		ret = os.system("cmake --build %s --parallel 8 > temp.out 2>&1" % build_dir)
 	if ret != 0:
 		print "ERROR in compiling job="
 		print job
@@ -43,9 +47,7 @@ def test_run(test = '', job=None):
 	if test == 'conflict':
 		app_flags = "-Ac -t4"
 	
-	#os.system("./rundb %s > temp.out 2>&1" % app_flags)
-	#cmd = "./rundb %s > temp.out 2>&1" % app_flags
-	cmd = "./rundb %s" % (app_flags)
+	cmd = "%s %s" % (binary, app_flags)
 	start = datetime.datetime.now()
 	process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 	timeout = 10 # in second
@@ -91,5 +93,4 @@ for alg in algs:
 run_all_test(jobs)
 
 os.system('cp config-std.h config.h')
-os.system('make clean > temp.out 2>&1')
-os.system('rm temp.out')
+os.system('rm -rf %s temp.out' % build_dir)

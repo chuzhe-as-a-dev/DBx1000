@@ -9,7 +9,7 @@
 RC TestWorkload::init() {
 	workload::init();
 	string path;
-	path = "./benchmarks/TEST_schema.txt";
+	path = "../benchmarks/TEST_schema.txt";
 	init_schema( path.c_str() );
 
 	init_table();
@@ -57,9 +57,8 @@ RC TestWorkload::get_txn_man(txn_man *& txn_manager, thread_t * h_thd) {
 }
 
 void TestWorkload::summarize() {
-	uint64_t curr_time = get_sys_clock();
 	if (g_test_case == CONFLICT) {
-		assert(curr_time - time > g_thread_cnt * 1e9);
+		assert(get_sys_clock() - time > g_thread_cnt * 1e9);
 		int total_wait_cnt = 0;
 		for (UInt32 tid = 0; tid < g_thread_cnt; tid ++) {
 			total_wait_cnt += stats._stats[tid]->wait_cnt;
