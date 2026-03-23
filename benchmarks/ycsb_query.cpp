@@ -34,6 +34,9 @@ ycsb_query::calculateDenom()
 // However, it seems there is a small bug. 
 // The original paper says zeta(theta, 2.0). But I guess it should be 
 // zeta(2.0, theta).
+// Computes the Zipf normalisation constant: sum of 1/i^theta for i=1..n.
+// Called once globally (calculateDenom) and once per query (zeta_2_theta)
+// to avoid recomputing the full sum every time zipf() is called. (AI-generated)
 double ycsb_query::zeta(uint64_t n, double theta) {
 	double sum = 0;
 	for (uint64_t i = 1; i <= n; i++) 
@@ -41,6 +44,10 @@ double ycsb_query::zeta(uint64_t n, double theta) {
 	return sum;
 }
 
+// Generates a Zipfian-distributed integer in [1, n] using inverse-CDF.
+// eta scales the CDF so it maps [0,1) onto the Zipfian distribution;
+// the special cases for uz < 1 and uz < 1+0.5^theta handle the first
+// two ranks efficiently before falling into the general power-law formula. (AI-generated)
 uint64_t ycsb_query::zipf(uint64_t n, double theta) {
 	assert(this->the_n == n);
 	assert(theta == g_zipf_theta);
@@ -56,6 +63,16 @@ uint64_t ycsb_query::zipf(uint64_t n, double theta) {
 	return 1 + (uint64_t)(n * pow(eta*u -eta + 1, alpha));
 }
 
+// Generates the request array for one YCSB transaction.
+// Partition selection: with probability g_perc_multi_part, accesses
+//   g_part_per_txn distinct partitions; otherwise stays in one partition.
+//   FIRST_PART_LOCAL pins the first partition to the thread's home partition.
+// Per request: type is RD/WR/SCAN by configured percentages; key is drawn
+//   from the Zipf distribution within the chosen partition's key range.
+//   Duplicate keys are rejected (each row accessed at most once per txn).
+//   SCAN conflicts are checked across the full scan range.
+// If g_key_order, requests are bubble-sorted by key (reduces lock ordering
+//   issues for some CC algorithms). (AI-generated)
 void ycsb_query::gen_requests(uint64_t thd_id, workload * h_wl) {
 #if CC_ALG == HSTORE
 	assert(g_virtual_part_cnt == g_part_cnt);

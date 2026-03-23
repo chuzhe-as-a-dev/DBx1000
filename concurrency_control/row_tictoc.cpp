@@ -23,6 +23,13 @@ Row_tictoc::init(row_t * row)
 #endif
 }
 	
+// Reads the row into a local copy and captures wts/rts for later validation.
+// ATOMIC_WORD path: uses a lock-free consistency loop — reads the timestamp
+//   word (v), copies the data, re-reads the word (v2). If wts bits differ
+//   (ignoring the rts field) the row was written mid-copy; retry.
+//   WRITE_PERMISSION_LOCK masks the write-permission bit during reads so
+//   a concurrent prewrite doesn't force a spurious retry.
+// Non-atomic path: holds the mutex briefly to snapshot wts, rts, and data. (AI-generated)
 RC
 Row_tictoc::access(txn_man * txn, TsType type, row_t * local_row)
 {
@@ -61,7 +68,11 @@ Row_tictoc::access(txn_man * txn, TsType type, row_t * local_row)
 	return RCOK;
 }
 
-void 
+// Commits a write: clears both wts and rts fields in the timestamp word,
+// sets the new wts, then copies the data. TICTOC_MV saves the old wts as
+// hist_wts so try_renew() can still validate reads that observed the previous
+// version (allowing a transaction to "rebase" its read lease). (AI-generated)
+void
 Row_tictoc::write_data(row_t * data, ts_t wts)
 {
 #if ATOMIC_WORD
@@ -105,9 +116,16 @@ Row_tictoc::renew_lease(ts_t wts, ts_t rts)
 	return true;
 }
 
-bool 
+// Attempts to extend the read lease (rts) on this row via CAS, without
+// acquiring the full lock. Used during TICTOC validation to push rts ≥ commit_ts.
+// Fails immediately if: the row is locked, wts has changed (concurrent write),
+// or (TICTOC_MV) the rebased wts doesn't match hist_wts.
+// Rebasing: if delta_rts would overflow the RTS_LEN-bit field, the wts is
+//   advanced by the overflow amount so the rts fits within the field width.
+//   The CAS may fail if another thread won the race; retry with updated v. (AI-generated)
+bool
 Row_tictoc::try_renew(ts_t wts, ts_t rts, ts_t &new_rts, uint64_t thd_id)
-{	
+{
 #if ATOMIC_WORD
 	uint64_t v = _ts_word;
 	uint64_t lock_mask = (WRITE_PERMISSION_LOCK)? WRITE_BIT : LOCK_BIT;

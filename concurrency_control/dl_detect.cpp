@@ -17,6 +17,9 @@ void DL_detect::init() {
 	V = g_thread_cnt;
 }
 
+// Records that txnid1 is waiting on the transactions in txnids[0..cnt-1].
+// num_locks is the lock count for txnid1 (used as victim-selection weight —
+// the txn with fewest locks in a cycle is chosen to abort). (AI-generated)
 int
 DL_detect::add_dep(uint64_t txnid1, uint64_t * txnids, int cnt, int num_locks) {
 	if (g_no_dl)
@@ -33,7 +36,14 @@ DL_detect::add_dep(uint64_t txnid1, uint64_t * txnids, int cnt, int num_locks) {
 	return 0;
 }
 
-bool 
+// DFS cycle detection on the wait-for graph.
+// visited[] prevents revisiting nodes; recStack[] marks the current DFS path.
+// If a neighbour is already on the current path (recStack), a cycle is found.
+// Stale TXN IDs (dependency[thd].txnid != txnid) are skipped to avoid false
+// cycles after a transaction commits and a new one reuses the same thread slot.
+// Tracks min_lock_num and min_txnid across all cycle members to identify the
+// best victim (least work done = least locks held). (AI-generated)
+bool
 DL_detect::nextNode(uint64_t txnid, DetectData * detect_data) {
 	int thd = get_thdid_from_txnid(txnid);
 	assert( !detect_data->visited[thd] );
@@ -97,6 +107,9 @@ bool DL_detect::isCyclic(uint64_t txnid, DetectData * detect_data) {
 	return nextNode(txnid, detect_data);
 }
 
+// Runs full cycle detection starting from txnid. Allocates visited/recStack
+// arrays on the thread-local arena to avoid contention. If a cycle is found,
+// marks the victim (min_txnid) for abort by setting lock_abort = true. (AI-generated)
 int
 DL_detect::detect_cycle(uint64_t txnid) {
 	if (g_no_dl)

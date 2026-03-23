@@ -95,6 +95,16 @@ Row_mvcc::double_list(uint32_t list)
 	}
 }
 
+// Main MVCC access dispatcher. All four request types share the same latch:
+//   R_REQ  – read the version whose wts is the greatest ts < txn->ts.
+//             If a prewrite with smaller ts is pending, the read must wait.
+//   P_REQ  – reserve a new version slot (prewrite). Aborts if another
+//             prewrite with a higher ts exists, or if ts < latest wts/rts.
+//             Waits if an earlier prewrite is pending.
+//   W_REQ  – commit the prewrite: mark the reserved slot valid, advance
+//             _latest_wts, then wake buffered readers/prewrites.
+//   XP_REQ – abort the prewrite: invalidate the reserved slot and wake
+//             buffered requests so they can proceed. (AI-generated)
 RC Row_mvcc::access(txn_man * txn, TsType type, row_t * row) {
 	RC rc = RCOK;
 	ts_t ts = txn->get_ts();
@@ -196,6 +206,15 @@ INC_STATS(txn->get_thd_id(), debug3, get_sys_clock() - t2);
 	return rc;
 }
 
+// Allocates a version slot for a new prewrite at timestamp ts.
+// GC phase: if the history is full, scans for the largest wts below the
+//   global min_ts; that version is invisible to all active readers so its
+//   backing row_t can be recycled (swapped with _row).
+// Slot allocation priority:
+//   1. Un-reserved free slot with an existing row_t.
+//   2. Un-reserved free slot (row_t will be allocated on demand).
+//   3. History is full but len < g_thread_cnt: double_list(0) to grow.
+//   4. len >= g_thread_cnt: evict the oldest version (force-recycle). (AI-generated)
 row_t *
 Row_mvcc::reserveRow(ts_t ts, txn_man * txn)
 {
@@ -311,6 +330,11 @@ Row_mvcc::reserveRow(ts_t ts, txn_man * txn)
 	return _write_history[idx].row;
 }
 
+// After a W_REQ or XP_REQ completes, notify buffered requests that can now
+// proceed. Finds the smallest-ts pending P_REQ above txn->ts (next_pre_ts),
+// then releases all R_REQs in the window (txn->ts, next_pre_ts) because
+// they now have a valid version to read. Also releases exactly the one P_REQ
+// with ts == next_pre_ts, reserving a version slot for it. (AI-generated)
 void Row_mvcc::update_buffer(txn_man * txn, TsType type) {
 	// the current txn performs WR or XP.
 	// immediate following R_REQ and P_REQ should return.

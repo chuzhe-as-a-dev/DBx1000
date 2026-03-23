@@ -16,6 +16,12 @@ void tpcc_query::init(uint64_t thd_id, workload * h_wl) {
 		gen_new_order(thd_id);
 }
 
+// Generates a TPC-C Payment transaction.
+// 85% chance: home warehouse (customer in same warehouse as the payment).
+// 15% chance: remote warehouse (different c_w_id); if it maps to a different
+//   partition, that partition is added to part_to_access.
+// Customer lookup: 60% by last name (via NURand syllable encoding),
+//   40% by customer ID. (AI-generated)
 void tpcc_query::gen_payment(uint64_t thd_id) {
 	type = TPCC_PAYMENT;
 	if (FIRST_PART_LOCAL)
@@ -60,6 +66,11 @@ void tpcc_query::gen_payment(uint64_t thd_id) {
 	}
 }
 
+// Generates a TPC-C New-Order transaction.
+// Creates 5-15 order lines; each line has a 1% chance of using a remote
+//   supply warehouse. Duplicate item IDs are removed (TPC-C spec requires
+//   unique items per order). After deduplication, part_to_access is updated
+//   to include all unique supply warehouse partitions. (AI-generated)
 void tpcc_query::gen_new_order(uint64_t thd_id) {
 	type = TPCC_NEW_ORDER;
 	if (FIRST_PART_LOCAL)

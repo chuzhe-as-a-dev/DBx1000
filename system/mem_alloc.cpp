@@ -28,6 +28,12 @@ Arena::init(int arena_id, int size) {
 	_block_size = size;
 }
 
+// Thread-local slab allocator for fixed-size blocks.
+// Fast path: pop from the free list (_head) in O(1).
+// Slow path: carve the next block out of the backing buffer; if the buffer is
+//   exhausted, grab a new 40960-block slab from malloc. Each block carries a
+//   FreeBlock header (stores size for free()) immediately before the user
+//   pointer. (AI-generated)
 void *
 Arena::alloc() {
 	FreeBlock * block;
@@ -70,6 +76,11 @@ void mem_alloc::init_thread_arena() {
 	}
 }
 
+// Maps this thread's pthread_t ID to its arena index (thd_id) using open-
+// addressing linear probing in the pid_arena hash table. The table is sized
+// at 4× thread count to keep the load factor low and collisions rare.
+// Called once per thread at startup (under mutex); the map is read lock-free
+// at allocation time via get_arena_id(). (AI-generated)
 void mem_alloc::register_thread(int thd_id) {
 	if (THREAD_ALLOC) {
 		pthread_mutex_lock( &map_lock );
@@ -96,9 +107,14 @@ void mem_alloc::unregister() {
 	}
 }
 
-int 
+// Resolves the calling thread's arena index without holding any lock.
+// On Graphite hardware the tile ID is available directly; on x86 it walks the
+// pid_arena table with the same linear probe used at registration. Stopping at
+// an empty slot (first == 0) guards against infinite loops for unregistered
+// threads, returning arena 0 as a fallback. (AI-generated)
+int
 mem_alloc::get_arena_id() {
-	int arena_id; 
+	int arena_id;
 #if NOGRAPHITE
 	pthread_t pid = pthread_self();
 	int entry = pid % _bucket_cnt;
@@ -108,7 +124,7 @@ mem_alloc::get_arena_id() {
 		entry = (entry + 1) % _bucket_cnt;
 	}
 	arena_id = pid_arena[entry].second;
-#else 
+#else
 	arena_id = CarbonGetTileId();
 #endif
 	return arena_id;
@@ -139,6 +155,11 @@ void mem_alloc::free(void * ptr, uint64_t size) {
 	}
 }
 
+// Allocates memory with three strategies:
+//   1. Oversized (> largest slab class): fall through to malloc directly.
+//   2. THREAD_ALLOC after warmup: route to the calling thread's per-size Arena
+//      slab — no locks, no contention.
+//   3. Otherwise: plain malloc (used during init before arenas are ready). (AI-generated)
 //TODO the program should not access more than a PAGE
 // to guanrantee correctness
 // lock is used for consistency (multiple threads may alloc simultaneously and 

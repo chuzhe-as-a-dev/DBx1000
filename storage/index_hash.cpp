@@ -92,9 +92,15 @@ void BucketHeader::init() {
 	locked = false;
 }
 
-void BucketHeader::insert_item(idx_key_t key, 
-		itemid_t * item, 
-		int part_id) 
+// Inserts key→item into the bucket's linked list of BucketNodes.
+// If a node for the key already exists (e.g. a secondary index with multiple
+// rows per key), the new item is prepended to that node's item chain.
+// Otherwise a new BucketNode is allocated and appended after prev_node
+// (or becomes first_node if the list was empty). Called under the bucket's
+// exclusive CAS latch. (AI-generated)
+void BucketHeader::insert_item(idx_key_t key,
+		itemid_t * item,
+		int part_id)
 {
 	BucketNode * cur_node = first_node;
 	BucketNode * prev_node = NULL;
@@ -104,8 +110,8 @@ void BucketHeader::insert_item(idx_key_t key,
 		prev_node = cur_node;
 		cur_node = cur_node->next;
 	}
-	if (cur_node == NULL) {		
-		BucketNode * new_node = (BucketNode *) 
+	if (cur_node == NULL) {
+		BucketNode * new_node = (BucketNode *)
 			mem_allocator.alloc(sizeof(BucketNode), part_id );
 		new_node->init(key);
 		new_node->items = item;

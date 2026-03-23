@@ -10,6 +10,13 @@
 #include "index_btree.h"
 #include "index_hash.h"
 
+// Allocates the per-transaction access array (MAX_ROW_PER_TXN entries, NULL-init'd
+// so first access to a slot triggers lazy allocation of the Access struct).
+// Also reads runtime parameters specific to TICTOC/SILO:
+//   pre_abort        – abort early on obvious conflict before reaching validation.
+//   validation_lock  – no-wait vs. blocking during the validation phase.
+//   write_copy_form  – TICTOC: store write-set as pointer vs. data copy.
+//   atomic_timestamp – TICTOC: use single atomic word for wts+rts pair. (AI-generated)
 void txn_man::init(thread_t * h_thd, workload * h_wl, uint64_t thd_id) {
 	this->h_thd = h_thd;
 	this->h_wl = h_wl;
@@ -66,6 +73,13 @@ ts_t txn_man::get_ts() {
 	return this->timestamp;
 }
 
+// Returns all accessed rows to their CC managers and resets per-txn counters.
+// Rows are released in reverse acquisition order to avoid deadlock on cleanup.
+// On abort, write accesses become XP (expire) so the manager can restore the
+// pre-image if ROLL_BACK is enabled; the original data copy made in get_row()
+// is passed for algorithms that need it (DL_DETECT / NO_WAIT / WAIT_DIE).
+// Any rows inserted by this transaction are freed on abort.
+// HEKATON skips all of this because it manages its own version chain. (AI-generated)
 void txn_man::cleanup(RC rc) {
 #if CC_ALG == HEKATON
 	row_cnt = 0;
@@ -119,6 +133,19 @@ void txn_man::cleanup(RC rc) {
 #endif
 }
 
+// Acquires access to a row under the current CC algorithm and records the
+// access in the per-txn access log for cleanup/validation later.
+//
+// Copy semantics by algorithm:
+//   SILO/TICTOC – allocate both data (working copy) and orig_data; also save
+//                 the observed wts/rts (TICTOC) or TID (SILO) for validation.
+//   DL_DETECT/NO_WAIT/WAIT_DIE – allocate orig_data for rollback; on write,
+//                 snapshot the current row so cleanup can restore it.
+//   Others – no extra copy; data points directly to the row buffer.
+//
+// Under REPEATABLE_READ for NO_WAIT/DL_DETECT, read locks are released
+// immediately after acquisition (lock-then-release), so the row manager is
+// notified here rather than in cleanup(). (AI-generated)
 row_t * txn_man::get_row(row_t * row, access_t type) {
 	if (CC_ALG == HSTORE)
 		return row;

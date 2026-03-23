@@ -18,6 +18,10 @@ uint64_t orderPrimaryKey(uint64_t w_id, uint64_t d_id, uint64_t o_id) {
 	return orderlineKey(w_id, d_id, o_id); 
 }
 
+// Encodes a customer's last name + district + warehouse into a single 64-bit
+// index key. Each character is mapped to an offset from 'A' (2 bits), packed
+// left-to-right with 2-bit shifts. The low 3 bits are reserved for
+// the district/warehouse composite to keep the key unique across districts. (AI-generated)
 uint64_t custNPKey(char * c_last, uint64_t c_d_id, uint64_t c_w_id) {
 	uint64_t key = 0;
 	char offset = 'A';
@@ -32,6 +36,9 @@ uint64_t stockKey(uint64_t s_i_id, uint64_t s_w_id) {
 	return s_w_id * g_max_items + s_i_id;
 }
 
+// Generates a TPC-C customer last name from a number in [0, 999].
+// The three decimal digits of num each independently select one of 10
+// fixed syllables (hundreds, tens, units), producing 1000 distinct names. (AI-generated)
 uint64_t Lastname(uint64_t num, char* name) {
   	static const char *n[] =
     	{"BAR", "OUGHT", "ABLE", "PRI", "PRES",
@@ -52,6 +59,10 @@ uint64_t URand(uint64_t x, uint64_t y, uint64_t thd_id) {
     return x + RAND(y - x + 1, thd_id);
 }
 
+// TPC-C non-uniform random: ((URand(0,A) | URand(x,y)) + C) % (y-x+1) + x.
+// C is a per-A constant initialised once on first call and cached to satisfy
+// the TPC-C requirement that the same C is used across the entire run.
+// A must be one of {255, 1023, 8191} (used for NURand of customer/item IDs). (AI-generated)
 uint64_t NURand(uint64_t A, uint64_t x, uint64_t y, uint64_t thd_id) {
   static bool C_255_init = false;
   static bool C_1023_init = false;

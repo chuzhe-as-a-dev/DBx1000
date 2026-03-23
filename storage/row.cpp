@@ -37,6 +37,11 @@ row_t::switch_schema(table_t * host_table) {
 	return RCOK;
 }
 
+// Allocates and initialises the per-row CC manager whose type is chosen
+// entirely at compile time by CC_ALG. The manager lives adjacent to the row
+// (or in the thread-local arena) and holds all algorithm-specific metadata
+// (lock lists, version chains, timestamp words, etc.).
+// HSTORE has no per-row manager — partition locks are used instead. (AI-generated)
 void row_t::init_manager(row_t * row) {
 #if CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE
     manager = (Row_lock *) mem_allocator.alloc(sizeof(Row_lock), _part_id);
@@ -132,6 +137,22 @@ void row_t::free_row() {
 	free(data);
 }
 
+// Acquires access to a row, dispatching to the compiled-in CC algorithm.
+//
+// Lock-based (WAIT_DIE / NO_WAIT / DL_DETECT):
+//   Requests SH or EX lock. On WAIT, spins until lock_ready or lock_abort.
+//   DL_DETECT additionally registers dependencies and runs cycle detection
+//   while waiting; on timeout (g_timeout) it self-aborts.
+//
+// Timestamp-based (TIMESTAMP / MVCC / HEKATON):
+//   Calls manager->access() which may return WAIT if a prewrite is pending;
+//   the caller spins on ts_ready.
+//
+// Optimistic (OCC / TICTOC / SILO):
+//   Always succeeds immediately; conflict detection is deferred to commit.
+//   A local copy is made here so the txn works on private data.
+//
+// HSTORE / VLL: no per-row locking; return the row directly. (AI-generated)
 RC row_t::get_row(access_t type, txn_man * txn, row_t *& row) {
 	RC rc = RCOK;
 #if CC_ALG == WAIT_DIE || CC_ALG == NO_WAIT || CC_ALG == DL_DETECT

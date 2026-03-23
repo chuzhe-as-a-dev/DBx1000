@@ -34,6 +34,13 @@ RC tpcc_txn_man::run_txn(base_query * query) {
 	}
 }
 
+// Executes TPC-C Payment transaction:
+//   1. Read (or write if g_wh_update) warehouse row — update YTD balance.
+//   2. Write district row — update district YTD balance.
+//   3. Look up customer: by last name (scan secondary index, pick median)
+//      or by customer ID (direct primary key lookup).
+//   4. Update customer balance, ytd_payment, payment_cnt.
+//   5. Insert a history record (payment audit trail). (AI-generated)
 RC tpcc_txn_man::run_payment(tpcc_query * query) {
 	RC rc = RCOK;
 	uint64_t key;

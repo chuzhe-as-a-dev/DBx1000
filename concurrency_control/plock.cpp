@@ -16,6 +16,13 @@ void PartMan::init() {
 	pthread_mutex_init( &latch, NULL );
 }
 
+// Acquires the partition lock.
+// If the partition is free, txn becomes owner immediately.
+// If the current owner has a larger timestamp (older = lower ts), txn is
+//   younger and can wait; it is inserted into the waiter list sorted by
+//   timestamp ascending (lowest ts = oldest = highest priority first).
+// If the current owner is younger than txn, txn aborts (wound-wait: older
+//   transactions wound younger ones). (AI-generated)
 RC PartMan::lock(txn_man * txn) {
 	RC rc;
 
@@ -44,6 +51,10 @@ RC PartMan::lock(txn_man * txn) {
 	return rc;
 }
 
+// Releases the partition lock. If txn is the owner, promotes the head waiter
+// (lowest ts) to owner and decrements its ready_part counter so Plock::lock()
+// knows this partition is ready. If txn is a waiter (aborted while waiting),
+// it is removed from the waiters array without promoting anyone. (AI-generated)
 void PartMan::unlock(txn_man * txn) {
 	pthread_mutex_lock( &latch );
 	if (txn == owner) {		
@@ -83,6 +94,12 @@ void Plock::init() {
 		part_mans[i]->init();
 }
 
+// Acquires all partition locks for a transaction.
+// Locks are requested in array order. On abort, all previously acquired
+// locks are released immediately to avoid holding resources.
+// Waiting is handled via ready_part: each WAIT return increments it, and
+// each successful promotion by unlock() decrements it. The txn spins until
+// ready_part reaches 0, meaning all partitions it's waiting on are ready. (AI-generated)
 RC Plock::lock(txn_man * txn, uint64_t * parts, uint64_t part_cnt) {
 	RC rc = RCOK;
 	ts_t starttime = get_sys_clock();

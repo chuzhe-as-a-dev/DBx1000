@@ -25,7 +25,17 @@ void Manager::init() {
 		pthread_mutex_init( &mutexes[i], NULL );
 }
 
-uint64_t 
+// Allocates a globally unique, monotonically increasing timestamp.
+// Four strategies (selected at compile/runtime via g_ts_alloc):
+//   TS_MUTEX  – mutex-protected increment; simple but highest contention.
+//   TS_CAS    – lock-free atomic fetch-add; supports batch allocation
+//               (reserves g_ts_batch_num timestamps per call) to amortise
+//               the atomic op cost when many threads are active.
+//   TS_HW     – Graphite hardware counter (not available in NOGRAPHITE builds).
+//   TS_CLOCK  – wall-clock * thread_cnt + thread_id; gives globally unique
+//               values without any shared state, at the cost of being tied
+//               to real time. (AI-generated)
+uint64_t
 Manager::get_ts(uint64_t thread_id) {
 	if (g_ts_batch_alloc)
 		assert(g_ts_alloc == TS_CAS);
@@ -40,7 +50,7 @@ Manager::get_ts(uint64_t thread_id) {
 	case TS_CAS :
 		if (g_ts_batch_alloc)
 			time = ATOM_FETCH_ADD((*timestamp), g_ts_batch_num);
-		else 
+		else
 			time = ATOM_FETCH_ADD((*timestamp), 1);
 		break;
 	case TS_HW :
@@ -62,11 +72,16 @@ Manager::get_ts(uint64_t thread_id) {
 	return time;
 }
 
+// Returns the minimum active timestamp across all threads, used by MVCC to
+// determine which old versions can be garbage collected. Only thread 0
+// refreshes the cached value (at most once per MIN_TS_INTVL) to avoid
+// O(threads) work on every call. The cached value is monotonically
+// non-decreasing so stale reads are safe — they just delay GC slightly. (AI-generated)
 ts_t Manager::get_min_ts(uint64_t tid) {
 	uint64_t now = get_sys_clock();
-	uint64_t last_time = _last_min_ts_time; 
+	uint64_t last_time = _last_min_ts_time;
 	if (tid == 0 && now - last_time > MIN_TS_INTVL)
-	{ 
+	{
 		ts_t min = UINT64_MAX;
     		for (UInt32 i = 0; i < g_thread_cnt; i++)
 			if (*all_ts[i] < min)
@@ -104,6 +119,11 @@ void Manager::release_row(row_t * row) {
 	pthread_mutex_unlock( &mutexes[bid] );
 }
 	
+// Advances the global epoch used by SILO. SILO assigns each committed
+// transaction a TID that encodes the current epoch, so all threads must agree
+// on epoch boundaries. The epoch is bumped at most once per LOG_BATCH_TIME ms
+// to amortise the cost; any thread can call this but only one will win the
+// time-check race. (AI-generated)
 void
 Manager::update_epoch()
 {

@@ -12,14 +12,20 @@
 /*************************************************/
 int Query_queue::_next_tid;
 
-void 
+// Pre-generates all queries before the benchmark begins.
+// For YCSB: computes the Zipf denominator (zeta) once globally so per-thread
+//   query generation can use it without recomputing.
+// Spawns g_thread_cnt-1 helper threads (plus uses the caller itself) to
+// generate queries in parallel, each thread building its own query array.
+// Thread IDs are claimed with an atomic fetch-add so no two threads duplicate
+// the same slot. (AI-generated)
+void
 Query_queue::init(workload * h_wl) {
 	all_queries = new Query_thd * [g_thread_cnt];
 	_wl = h_wl;
 	_next_tid = 0;
-	
 
-#if WORKLOAD == YCSB	
+#if WORKLOAD == YCSB
 	ycsb_query::calculateDenom();
 #elif WORKLOAD == TPCC
 	assert(tpcc_buffer != NULL);
@@ -64,7 +70,11 @@ Query_queue::threadInitQuery(void * This) {
 //     class Query_thd
 /*************************************************/
 
-void 
+// Allocates and pre-generates all queries for one thread.
+// request_cnt = warmup share + measurement share + small padding +
+//               (if abort buffer enabled) extra slots so aborted queries can
+//               be re-queued without wrapping around the array end. (AI-generated)
+void
 Query_thd::init(workload * h_wl, int thread_id) {
 	uint64_t request_cnt;
 	q_idx = 0;

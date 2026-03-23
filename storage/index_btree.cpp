@@ -109,6 +109,12 @@ RC index_btree::index_read(idx_key_t key, itemid_t *& item,
 	return rc;
 }
 
+// Inserts key→item into the B+ tree for the given partition.
+// Uses latch-coupling: find_leaf() traverses with SH latches and
+// pre-emptively upgrades ancestors to EX when a child is full,
+// so no re-traversal is needed on split. The set of EX-latched nodes
+// (leaf up to last_ex) is recorded in ex_list and released after
+// insert/split completes. (AI-generated)
 RC index_btree::index_insert(idx_key_t key, itemid_t * item, int part_id) {
 	glob_param params;
 	if (WORKLOAD == TPCC) assert(part_id != -1);
@@ -208,8 +214,13 @@ RC index_btree::start_new_tree(glob_param params, idx_key_t key, itemid_t * item
 	return RCOK;
 }
 
+// Attempts to acquire a SH or EX latch on the node.
+// Uses a spinlock (node->latch CAS) to protect the latch_type/share_cnt state.
+// SH is compatible with SH (increments share_cnt); EX requires LATCH_NONE.
+// Returns false without blocking if the latch is incompatible — callers retry
+// the traversal from scratch. (AI-generated)
 bool index_btree::latch_node(bt_node * node, latch_t latch_type) {
-	// TODO latch is disabled 
+	// TODO latch is disabled
 	if (!ENABLE_LATCH)
 		return true;
 	bool success = false;
@@ -240,6 +251,8 @@ bool index_btree::latch_node(bt_node * node, latch_t latch_type) {
 	return success;
 }
 
+// Releases a latch: EX → NONE immediately; SH decrements share_cnt and
+// transitions to NONE only when the count reaches 0 (last shared reader). (AI-generated)
 latch_t index_btree::release_latch(bt_node * node) {
 	if (!ENABLE_LATCH)
 		return LATCH_SH;
@@ -265,6 +278,9 @@ latch_t index_btree::release_latch(bt_node * node) {
 	return type;
 }
 
+// Upgrades a SH latch to EX. Succeeds only if this is the sole SH holder
+// (share_cnt == 1), so no readers are concurrently traversing this node.
+// Returns Abort if other readers hold a SH latch; the caller must back off. (AI-generated)
 RC index_btree::upgrade_latch(bt_node * node) {
 	if (!ENABLE_LATCH)
 		return RCOK;
@@ -311,7 +327,15 @@ RC index_btree::find_leaf(glob_param params, idx_key_t key, idx_acc_t access_typ
 	return rc;
 }
 
-RC index_btree::find_leaf(glob_param params, idx_key_t key, idx_acc_t access_type, bt_node *& leaf, bt_node  *& last_ex) 
+// Traverses from root to leaf using latch-coupling (crabbing):
+//   INDEX_NONE  – no latches acquired (used only during init).
+//   INDEX_READ  – acquire SH on each node, release parent after latching child.
+//   INDEX_INSERT – SH traversal but upgrades ancestors to EX when the child
+//     is full (num_keys == order-1) and thus safe-split may be needed.
+//     last_ex tracks the highest node that was upgraded so callers can know
+//     the full set of EX-latched ancestors to release after the insert.
+//     On any upgrade failure the traversal aborts and the caller retries. (AI-generated)
+RC index_btree::find_leaf(glob_param params, idx_key_t key, idx_acc_t access_type, bt_node *& leaf, bt_node  *& last_ex)
 {
 //	RC rc;
 	UInt32 i;
@@ -405,6 +429,11 @@ RC index_btree::insert_into_leaf(glob_param params, bt_node * leaf, idx_key_t ke
 	return RCOK;
 }
 
+// Splits a full leaf and inserts the new key.
+// Builds a temporary array of (order) key-pointer pairs (existing + new),
+// divides them at cut(order-1) into left (original leaf) and right (new_leaf),
+// links new_leaf into the sibling chain, then propagates the split key upward
+// via insert_into_parent(). (AI-generated)
 RC index_btree::split_lf_insert(glob_param params, bt_node * leaf, idx_key_t key, itemid_t * item) {
 	RC rc;
 	UInt32 insertion_index, split, i, j;
@@ -479,12 +508,17 @@ RC index_btree::split_lf_insert(glob_param params, bt_node * leaf, idx_key_t key
 	return rc;
 }
 
+// Propagates a split upward by inserting the separator key into the parent.
+// If parent is NULL, the tree height grows by creating a new root.
+// If the parent is not full, the key is inserted in-place.
+// If the parent is full, it is split recursively via split_nl_insert(),
+// which continues propagation until a non-full ancestor is found. (AI-generated)
 RC index_btree::insert_into_parent(
 	glob_param params,
-	bt_node * left, 
-	idx_key_t key, 
+	bt_node * left,
+	idx_key_t key,
 	bt_node * right) {
-	
+
 	bt_node * parent = left->parent;
 
 	/* Case: new root. */

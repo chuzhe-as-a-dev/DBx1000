@@ -14,6 +14,9 @@ Row_occ::init(row_t * row) {
 	blatch = false;
 }
 
+// Read access under OCC: aborts if the row was written after the txn's
+// start_ts, ensuring the txn's snapshot is consistent. On success copies
+// the current row data into the txn's private cur_row. (AI-generated)
 RC
 Row_occ::access(txn_man * txn, TsType type) {
 	RC rc = RCOK;
@@ -36,6 +39,8 @@ Row_occ::latch() {
 	pthread_mutex_lock( _latch );
 }
 
+// Validation check at commit time: the row must not have been written after
+// the txn's start_ts, otherwise the read was stale. (AI-generated)
 bool
 Row_occ::validate(uint64_t ts) {
 	if (ts < wts) return false;

@@ -18,6 +18,11 @@ Row_silo::init(row_t * row)
 #endif
 }
 
+// Reads the row while verifying TID consistency (SILO-style optimistic read).
+// ATOMIC_WORD: spins until the lock bit is clear, copies the row, then checks
+//   the TID word hasn't changed — if it has, someone committed a write mid-copy
+//   and we retry. The observed TID (without lock bit) is saved for validation.
+// Non-atomic: acquire mutex, copy, record TID, release. (AI-generated)
 RC
 Row_silo::access(txn_man * txn, TsType type, row_t * local_row) {
 #if ATOMIC_WORD
@@ -43,6 +48,10 @@ Row_silo::access(txn_man * txn, TsType type, row_t * local_row) {
 	return RCOK;
 }
 
+// Validates that the TID observed at read time hasn't changed.
+// Write-set rows: the lock bit should be set by us; compare TID ignoring it.
+// Read-set rows: if locked by another, fail. If TID changed, fail.
+// Non-atomic path acquires trylock to prevent a concurrent write from racing. (AI-generated)
 bool
 Row_silo::validate(ts_t tid, bool in_write_set) {
 #if ATOMIC_WORD
@@ -67,6 +76,9 @@ Row_silo::validate(ts_t tid, bool in_write_set) {
 #endif
 }
 
+// Writes the committed data and installs the new TID (with lock bit still set).
+// The lock bit is cleared by release() after all writes in the write set are
+// applied, making the new TID visible atomically. (AI-generated)
 void
 Row_silo::write(row_t * data, uint64_t tid) {
 	_row->copy(data);

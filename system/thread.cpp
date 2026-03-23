@@ -13,6 +13,9 @@
 #include "mem_alloc.h"
 #include "test.h"
 
+// Seeds per-thread RNG with thread ID × wall-clock time to avoid correlation
+// across threads. Initializes the abort buffer, which holds aborted queries
+// with a cooldown delay before retrying, avoiding hot-retry storms on contended rows. (AI-generated)
 void thread_t::init(uint64_t thd_id, workload * workload) {
 	_thd_id = thd_id;
 	_wl = workload;
@@ -31,6 +34,25 @@ void thread_t::set_host_cid(uint64_t cid) { _host_cid = cid; }
 uint64_t thread_t::get_cur_cid() { return _cur_cid; }
 void thread_t::set_cur_cid(uint64_t cid) {_cur_cid = cid; }
 
+// Main per-thread execution loop. Handles two phases:
+//   Warmup: runs WARMUP/g_thread_cnt transactions, then signals FINISH so
+//           main() can transition all threads to the measurement phase.
+//   Measurement: runs MAX_TXN_PER_PART transactions, then sets sim_done.
+//
+// Query selection (abort buffer enabled):
+//   Priority 1 – pick a cooled-down query from the abort buffer (past ready_time).
+//   Priority 2 – if buffer is full, sleep until the earliest ready_time.
+//   Priority 3 – fetch a fresh query from the pre-generated queue.
+//
+// CC-specific setup before each transaction:
+//   HSTORE  – acquires partition locks before running.
+//   MVCC/HEKATON – registers the txn's timestamp with the global manager
+//                  so get_min_ts() can compute the oldest active read.
+//   OCC     – advances global ts to get start_ts (simplification vs. paper).
+//   WAIT_DIE – assigns ts at query-fetch time so older txns always win.
+//
+// On abort: stores the query in the abort buffer with a randomised penalty
+// delay; without the buffer the thread simply sleeps for the penalty. (AI-generated)
 RC thread_t::run() {
 #if !NOGRAPHITE
 	_thd_id = CarbonGetTileId();
@@ -72,8 +94,8 @@ RC thread_t::run() {
 								_abort_buffer[i].query = NULL;
 								_abort_buffer_empty_slots ++;
 								break;
-							} else if (_abort_buffer_empty_slots == 0 
-									  && _abort_buffer[i].ready_time < min_ready_time) 
+							} else if (_abort_buffer_empty_slots == 0
+									  && _abort_buffer[i].ready_time < min_ready_time)
 								min_ready_time = _abort_buffer[i].ready_time;
 						}
 					}
@@ -202,6 +224,10 @@ RC thread_t::run() {
 }
 
 
+// Allocates the next monotonic timestamp for this thread.
+// Batch mode: reserves a block of g_ts_batch_num timestamps from the global
+//   counter with a single atomic op, then hands them out locally one at a time,
+//   reducing contention on the global counter. (AI-generated)
 ts_t
 thread_t::get_next_ts() {
 	if (g_ts_batch_alloc) {

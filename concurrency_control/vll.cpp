@@ -17,6 +17,11 @@ VLLMan::init() {
 	_txn_queue_tail = NULL;
 }
 
+// VLL main loop: index lookups happen outside the critical section, then the
+// txn enters a mutex-protected loop. Key invariant: only one thread at a time
+// executes a VLL_Blocked txn (the queue head); other threads either become
+// VLL_Free (no conflicts) and execute immediately, or enqueue as VLL_Blocked
+// and return, trusting a future caller to run them when they reach the front. (AI-generated)
 void
 VLLMan::vllMainLoop(txn_man * txn, base_query * query) {
 	
@@ -68,6 +73,11 @@ INC_STATS(txn->get_thd_id(), debug5, tt5);
 	return;
 }
 
+// Checks whether the new txn conflicts with any already-queued access on any
+// row it touches (via Row_vll::insert_access). If any row has a conflicting
+// access, the txn is classified VLL_Blocked; otherwise VLL_Free. Either way
+// the txn is appended to the queue. Called with _mutex held; releases it
+// before returning. Returns 2 for Free (execute now), 1 for Blocked (enqueue). (AI-generated)
 int
 VLLMan::beginTxn(txn_man * txn, base_query * query, TxnQEntry *& entry) {
 

@@ -26,6 +26,15 @@ RC Row_lock::lock_get(lock_t type, txn_man * txn) {
 	return lock_get(type, txn, txnids, txncnt);
 }
 
+// Core lock acquisition under three policies (selected by CC_ALG):
+//   NO_WAIT    – abort immediately if any conflict.
+//   WAIT_DIE   – a txn may wait only if it is older than all current owners;
+//                waiters are kept sorted by timestamp so older txns queue ahead.
+//                Conflict is also forced if any earlier-timestamped waiter exists,
+//                to prevent starvation of the queue head.
+//   DL_DETECT  – always wait; build the waits-for edge list (txnids/txncnt)
+//                so the caller can register the dependency with dl_detector.
+//                Every new waiter goes to the tail; the caller drives detection. (AI-generated)
 RC Row_lock::lock_get(lock_t type, txn_man * txn, uint64_t* &txnids, int &txncnt) {
 	assert (CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE);
 	RC rc;
@@ -162,7 +171,11 @@ final:
 }
 
 
-RC Row_lock::lock_release(txn_man * txn) {	
+// Removes the txn from either the owner or waiter list, then promotes
+// waiting txns to owners as long as the head waiter's lock type is
+// compatible with the current lock_type. Each promoted waiter sets
+// lock_ready = true so the spinning thread in get_row() wakes up. (AI-generated)
+RC Row_lock::lock_release(txn_man * txn) {
 
 	if (g_central_man)
 		glob_manager->lock_row(_row);
