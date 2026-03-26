@@ -4,7 +4,7 @@
 /***********************************************/
 // Simulation + Hardware
 /***********************************************/
-#define THREAD_CNT					4
+#define DEFAULT_THREAD_CNT			4
 #define PART_CNT					1 
 // each transaction only accesses 1 virtual partition. But the lock/ts manager and index are not aware of such partitioning. VIRTUAL_PART_CNT describes the request distribution and is only used to generate queries. For HSTORE, VIRTUAL_PART_CNT should be the same as PART_CNT.
 #define VIRTUAL_PART_CNT			1
@@ -98,7 +98,7 @@
 // This is fine for single partition transactions. 
 #define HSTORE_LOCAL_TS				false
 // [VLL] 
-#define TXN_QUEUE_SIZE_LIMIT		THREAD_CNT
+#define TXN_QUEUE_SIZE_LIMIT		g_thread_cnt
 
 /***********************************************/
 // Logging
@@ -162,11 +162,6 @@ extern TPCCTxnType 					g_tpcc_txn_type;
 /***********************************************/
 // TODO centralized CC management. 
 /***********************************************/
-#define MAX_LOCK_CNT				(20 * THREAD_CNT) 
-#define TSTAB_SIZE                  50 * THREAD_CNT
-#define TSTAB_FREE                  TSTAB_SIZE 
-#define TSREQ_FREE                  4 * TSTAB_FREE
-#define MVHIS_FREE                  4 * TSTAB_FREE
 #define SPIN                        false
 
 /***********************************************/
