@@ -59,7 +59,7 @@ double g_perc_payment = PERC_PAYMENT;
 bool g_wh_update = WH_UPDATE;
 char * output_file = NULL;
 
-map<string, string> g_params;
+std::map<std::string, std::string> g_params;
 
 #if TPCC_SMALL
 UInt32 g_max_items = 10000;

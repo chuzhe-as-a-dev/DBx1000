@@ -683,7 +683,7 @@ UInt32 index_btree::cut(UInt32 length) {
 /*
 void index_btree::print_btree(bt_node * start) {
 	if (roots == NULL) {
-		cout << "NULL" << endl;
+		std::cout << "NULL" << std::endl;
 		return;
 	}
 	bt_node * c;
@@ -707,10 +707,10 @@ void index_btree::print_btree(bt_node * start) {
 				else 
 					printf("%lld,", c->keys[i]);
 			}
-			cout << "|";
+			std::cout << "|";
 			c = c->next;
 		}
-		cout << endl;
+		std::cout << std::endl;
 	} while (!last_iter);
 
 }*/

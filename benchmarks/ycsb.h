@@ -10,7 +10,7 @@ class ycsb_wl : public workload {
 public :
 	RC init();
 	RC init_table();
-	RC init_schema(string schema_file);
+	RC init_schema(std::string schema_file);
 	RC get_txn_man(txn_man *& txn_manager, thread_t * h_thd);
 	int key_to_part(uint64_t key);
 	INDEX * the_index;

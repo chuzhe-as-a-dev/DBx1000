@@ -15,21 +15,21 @@
 
 RC tpcc_wl::init() {
 	workload::init();
-	string path = "benchmarks/";
+	std::string path = "benchmarks/";
 #if TPCC_SMALL
 	path += "TPCC_short_schema.txt";
 #else
 	path += "TPCC_full_schema.txt";
 #endif
-	cout << "reading schema file: " << path << endl;
-	init_schema( path.c_str() );
-	cout << "TPCC schema initialized" << endl;
+	std::cout << "reading schema file: " << path << std::endl;
+	init_schema(path);
+	std::cout << "TPCC schema initialized" << std::endl;
 	init_table();
 	next_tid = 0;
 	return RCOK;
 }
 
-RC tpcc_wl::init_schema(const char * schema_file) {
+RC tpcc_wl::init_schema(std::string schema_file) {
 	workload::init_schema(schema_file);
 	t_warehouse = tables["WAREHOUSE"];
 	t_district = tables["DISTRICT"];

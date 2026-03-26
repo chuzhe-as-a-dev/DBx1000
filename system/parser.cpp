@@ -120,11 +120,11 @@ void parser(int argc, char * argv[]) {
 			exit(0);
 		} 
 		else if (argv[i][1] == '-') {
-			string line(&argv[i][2]);
+			std::string line(&argv[i][2]);
 			size_t pos = line.find("="); 
-			assert(pos != string::npos);
-			string name = line.substr(0, pos);
-			string value = line.substr(pos + 1, line.length());
+			assert(pos != std::string::npos);
+			std::string name = line.substr(0, pos);
+			std::string value = line.substr(pos + 1, line.length());
 			assert(g_params.find(name) != g_params.end());
 			g_params[name] = value;
 		}

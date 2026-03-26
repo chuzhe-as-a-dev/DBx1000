@@ -13,37 +13,37 @@ RC workload::init() {
 	return RCOK;
 }
 
-RC workload::init_schema(string schema_file) {
+RC workload::init_schema(std::string schema_file) {
     assert(sizeof(uint64_t) == 8);
     assert(sizeof(double) == 8);	
-	string line;
-	ifstream fin(schema_file);
+	std::string line;
+	std::ifstream fin(schema_file);
     Catalog * schema;
     while (getline(fin, line)) {
 		if (line.compare(0, 6, "TABLE=") == 0) {
-			string tname;
+			std::string tname;
 			tname = &line[6];
 			schema = (Catalog *) _mm_malloc(sizeof(Catalog), CL_SIZE);
 			getline(fin, line);
 			int col_count = 0;
 			// Read all fields for this table.
-			vector<string> lines;
+			std::vector<std::string> lines;
 			while (line.length() > 1) {
 				lines.push_back(line);
 				getline(fin, line);
 			}
 			schema->init( tname.c_str(), lines.size() );
 			for (UInt32 i = 0; i < lines.size(); i++) {
-				string line = lines[i];
+				std::string line = lines[i];
 			    size_t pos = 0;
-				string token;
+				std::string token;
 				int elem_num = 0;
 				int size = 0;
-				string type;
-				string name;
+				std::string type;
+				std::string name;
 				while (line.length() != 0) {
 					pos = line.find(",");
-					if (pos == string::npos)
+					if (pos == std::string::npos)
 						pos = line.length();
 	    			token = line.substr(0, pos);
 			    	line.erase(0, pos + 1);
@@ -63,23 +63,23 @@ RC workload::init_schema(string schema_file) {
 			cur_tab->init(schema);
 			tables[tname] = cur_tab;
         } else if (!line.compare(0, 6, "INDEX=")) {
-			string iname;
+			std::string iname;
 			iname = &line[6];
 			getline(fin, line);
 
-			vector<string> items;
-			string token;
+			std::vector<std::string> items;
+			std::string token;
 			size_t pos;
 			while (line.length() != 0) {
 				pos = line.find(",");
-				if (pos == string::npos)
+				if (pos == std::string::npos)
 					pos = line.length();
 	    		token = line.substr(0, pos);
 				items.push_back(token);
 		    	line.erase(0, pos + 1);
 			}
 			
-			string tname(items[0]);
+			std::string tname(items[0]);
 			INDEX * index = (INDEX *) _mm_malloc(sizeof(INDEX), 64);
 			new(index) INDEX();
 			int part_cnt = (CENTRAL_INDEX)? 1 : g_part_cnt;

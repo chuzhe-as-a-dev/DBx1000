@@ -19,13 +19,13 @@ class workload
 {
 public:
 	// tables indexed by table name
-	map<string, table_t *> tables;
-	map<string, INDEX *> indexes;
+	std::map<std::string, table_t *> tables;
+	std::map<std::string, INDEX *> indexes;
 
 	
 	// initialize the tables and indexes.
 	virtual RC init();
-	virtual RC init_schema(string schema_file);
+	virtual RC init_schema(std::string schema_file);
 	virtual RC init_table()=0;
 	virtual RC get_txn_man(txn_man *& txn_manager, thread_t * h_thd)=0;
 	

@@ -8,15 +8,15 @@
 
 RC TestWorkload::init() {
 	workload::init();
-	string path;
+	std::string path;
 	path = "benchmarks/TEST_schema.txt";
-	init_schema( path.c_str() );
+	init_schema(path);
 
 	init_table();
 	return RCOK;
 }
 
-RC TestWorkload::init_schema(const char * schema_file) {
+RC TestWorkload::init_schema(std::string schema_file) {
 	workload::init_schema(schema_file);
 	the_table = tables["MAIN_TABLE"]; 	
 	the_index = indexes["MAIN_INDEX"];

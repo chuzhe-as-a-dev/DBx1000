@@ -1,14 +1,14 @@
 #pragma once 
 
-#include "stdint.h"
+#include <cstdint>
 #include <unistd.h>
 #include <cstddef>
 #include <cstdlib>
 #include <cassert>
-#include <stdio.h>
+#include <cstdio>
 #include <iostream>
 #include <fstream>
-#include <string.h>
+#include <cstring>
 #include <typeinfo>
 #include <list>
 #include <mm_malloc.h>
@@ -17,16 +17,15 @@
 #include <string>
 #include <vector>
 #include <sstream>
-#include <time.h> 
+#include <ctime> 
 #include <sys/time.h>
-#include <math.h>
+#include <cmath>
 
 #include "pthread.h"
 #include "config.h"
 #include "stats.h"
 #include "dl_detect.h"
 
-using namespace std;
 
 class mem_alloc;
 class Stats;
@@ -81,7 +80,7 @@ extern ts_t g_dl_loop_detect;
 extern bool g_ts_batch_alloc;
 extern UInt32 g_ts_batch_num;
 
-extern map<string, string> g_params;
+extern std::map<std::string, std::string> g_params;
 
 // YCSB
 extern UInt32 g_cc_alg;
