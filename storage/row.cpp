@@ -160,8 +160,8 @@ RC row_t::get_row(access_t type, txn_man * txn, row_t *& row) {
 	lock_t lt = (type == RD || type == SCAN)? LOCK_SH : LOCK_EX;
 #if CC_ALG == DL_DETECT
 	uint64_t * txnids;
-	int txncnt; 
-	rc = this->manager->lock_get(lt, txn, txnids, txncnt);	
+	int txncnt;
+	rc = this->manager->lock_get(lt, txn, txnids, txncnt);
 #else
 	rc = this->manager->lock_get(lt, txn);
 #endif
@@ -229,21 +229,21 @@ RC row_t::get_row(access_t type, txn_man * txn, row_t *& row) {
 		row = this;
 	}
 	return rc;
-#elif CC_ALG == TIMESTAMP || CC_ALG == MVCC || CC_ALG == HEKATON 
+#elif CC_ALG == TIMESTAMP || CC_ALG == MVCC || CC_ALG == HEKATON
 	uint64_t thd_id = txn->get_thd_id();
 	// For TIMESTAMP RD, a new copy of the row will be returned.
 	// for MVCC RD, the version will be returned instead of a copy
 	// So for MVCC RD-WR, the version should be explicitly copied.
 	//row_t * newr = NULL;
   #if CC_ALG == TIMESTAMP
-	// TODO. should not call malloc for each row read. Only need to call malloc once 
+	// TODO. should not call malloc for each row read. Only need to call malloc once
 	// before simulation starts, like TicToc and Silo.
 	txn->cur_row = (row_t *) mem_allocator.alloc(sizeof(row_t), this->get_part_id());
 	txn->cur_row->init(get_table(), this->get_part_id());
   #endif
 
 	// TODO need to initialize the table/catalog information.
-	TsType ts_type = (type == RD)? R_REQ : P_REQ; 
+	TsType ts_type = (type == RD)? R_REQ : P_REQ;
 	rc = this->manager->access(txn, ts_type, row);
 	if (rc == RCOK ) {
 		row = txn->cur_row;
@@ -270,7 +270,7 @@ RC row_t::get_row(access_t type, txn_man * txn, row_t *& row) {
 #elif CC_ALG == TICTOC || CC_ALG == SILO
 	// like OCC, tictoc also makes a local copy for each read/write
 	row->table = get_table();
-	TsType ts_type = (type == RD)? R_REQ : P_REQ; 
+	TsType ts_type = (type == RD)? R_REQ : P_REQ;
 	rc = this->manager->access(txn, ts_type, row);
 	return rc;
 #elif CC_ALG == HSTORE || CC_ALG == VLL
@@ -295,10 +295,10 @@ void row_t::return_row(access_t type, txn_man * txn, row_t * row) {
 		this->copy(row);
 	}
 	this->manager->lock_release(txn);
-#elif CC_ALG == TIMESTAMP || CC_ALG == MVCC 
+#elif CC_ALG == TIMESTAMP || CC_ALG == MVCC
 	// for RD or SCAN or XP, the row should be deleted.
 	// because all WR should be companied by a RD
-	// for MVCC RD, the row is not copied, so no need to free. 
+	// for MVCC RD, the row is not copied, so no need to free.
   #if CC_ALG == TIMESTAMP
 	if (type == RD || type == SCAN) {
 		row->free_row();

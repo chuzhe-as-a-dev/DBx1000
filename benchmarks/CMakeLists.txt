@@ -1,11 +1,19 @@
-target_sources(rundb PRIVATE
-    test_txn.cpp
-    test_wl.cpp
-    tpcc_helper.cpp
-    tpcc_query.cpp
-    tpcc_txn.cpp
-    tpcc_wl.cpp
-    ycsb_query.cpp
-    ycsb_txn.cpp
-    ycsb_wl.cpp
-)
+# Macro-independent (compiled once)
+add_library(benchmarks_common OBJECT tpcc_helper.cpp tpcc_query.cpp)
+target_link_libraries(benchmarks_common PRIVATE dbx_includes)
+
+# Per-workload objects (benchmark files use no WORKLOAD or CC_ALG macros)
+foreach(wl IN LISTS DBX_WORKLOADS)
+    if(wl STREQUAL "YCSB")
+        set(_srcs ycsb_query.cpp ycsb_txn.cpp ycsb_wl.cpp)
+    elseif(wl STREQUAL "TPCC")
+        set(_srcs tpcc_txn.cpp tpcc_wl.cpp)
+    elseif(wl STREQUAL "TEST")
+        set(_srcs test_txn.cpp test_wl.cpp)
+    else()
+        message(FATAL_ERROR "Unknown workload: ${wl}")
+    endif()
+    string(TOLOWER "${wl}" wl_lower)
+    add_library(benchmarks_${wl_lower} OBJECT ${_srcs})
+    target_link_libraries(benchmarks_${wl_lower} PRIVATE dbx_includes)
+endforeach()

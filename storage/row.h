@@ -99,6 +99,8 @@ public:
   	Row_silo * manager;
   #elif CC_ALG == VLL
   	Row_vll * manager;
+  #else  // HSTORE: no per-row manager, but keep field to maintain sizeof(row_t)
+  	void * manager;
   #endif
 	char * data;
 	table_t * table;

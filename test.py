@@ -1,96 +1,60 @@
-import os, sys, re, os.path
-import platform
-import subprocess, datetime, time, signal
+import os, sys, subprocess, datetime, time, signal
 
-def replace(filename, pattern, replacement):
-	f = open(filename)
-	s = f.read()
-	f.close()
-	s = re.sub(pattern,replacement,s)
-	f = open(filename,'w')
-	f.write(s)
-	f.close()
-
-jobs = {}
-dbms_cfg = ["config-std.h", "config.h"]
 build_dir = "build"
-binary = os.path.join(build_dir, "rundb")
 algs = ['DL_DETECT', 'NO_WAIT', 'HEKATON', 'SILO', 'TICTOC']
-def insert_job(alg, workload):
-	jobs[alg + '_' + workload] = {
-		"WORKLOAD"			: workload,
-		"CORE_CNT"			: 4,
-		"CC_ALG"			: alg,
-	}
+workloads = ['YCSB', 'TPCC', 'TEST']
 
 
-def test_compile(job):
-	os.system("cp "+ dbms_cfg[0] +' ' + dbms_cfg[1])
-	for (param, value) in job.iteritems():
-		pattern = r"\#define\s*" + re.escape(param) + r'.*'
-		replacement = "#define " + param + ' ' + str(value)
-		replace(dbms_cfg[1], pattern, replacement)
-	os.system("rm -rf %s temp.out" % build_dir)
-	ret = os.system("cmake -S . -B %s -DCMAKE_BUILD_TYPE=RelWithDebInfo > temp.out 2>&1" % build_dir)
-	if ret == 0:
-		ret = os.system("cmake --build %s --parallel 8 > temp.out 2>&1" % build_dir)
-	if ret != 0:
-		print "ERROR in compiling job="
-		print job
-		exit(0)
-	print "PASS Compile\t\talg=%s,\tworkload=%s" % (job['CC_ALG'], job['WORKLOAD'])
+def build_all():
+    ret = os.system(
+        'cmake -S . -B %s -DCMAKE_BUILD_TYPE=Debug'
+        ' -DDBX_TEST_MODE=ON'
+        ' > temp.out 2>&1' % build_dir
+    )
+    if ret != 0:
+        print("ERROR: cmake configure failed (see temp.out)")
+        sys.exit(1)
+    ret = os.system("cmake --build %s --parallel > temp.out 2>&1" % build_dir)
+    if ret != 0:
+        print("ERROR: build failed (see temp.out)")
+        sys.exit(1)
+    print("PASS Build\t\tall variants")
 
-def test_run(test = '', job=None):
-	app_flags = ""
-	if test == 'read_write':
-		app_flags = "-Ar -t1"
-	if test == 'conflict':
-		app_flags = "-Ac -t4"
-	
-	cmd = "%s %s" % (binary, app_flags)
-	start = datetime.datetime.now()
-	process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-	timeout = 10 # in second
-	while process.poll() is None:
-		time.sleep(1)
-		now = datetime.datetime.now()
-		if (now - start).seconds > timeout:
-			os.kill(process.pid, signal.SIGKILL)
-			os.waitpid(-1, os.WNOHANG)
-			print "ERROR. Timeout cmd=%s" % cmd
-			exit(0)
-	if "PASS" in process.stdout.read():
-		if test != '':
-			print "PASS execution. \talg=%s,\tworkload=%s(%s)" % \
-				(job["CC_ALG"], job["WORKLOAD"], test)
-		else :
-			print "PASS execution. \talg=%s,\tworkload=%s" % \
-				(job["CC_ALG"], job["WORKLOAD"])
-		return
-	print "FAILED execution. cmd = %s" % cmd
-	exit(0)
 
-def run_all_test(jobs) :
-	for (jobname, job) in jobs.iteritems():
-		test_compile(job)
-		if job['WORKLOAD'] == 'TEST':
-			test_run('read_write', job)
-			#test_run('conflict', job)
-		else :
-			test_run('', job)
-	jobs = {}
+def test_run(binary, alg, workload, test=''):
+    app_flags = ""
+    if test == 'read_write':
+        app_flags = "-Ar -t1"
+    if test == 'conflict':
+        app_flags = "-Ac -t4"
 
-# run YCSB tests
-jobs = {}
-for alg in algs: 
-	insert_job(alg, 'YCSB')
-run_all_test(jobs)
+    cmd = "%s %s" % (binary, app_flags)
+    start = datetime.datetime.now()
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    timeout = 10
+    while process.poll() is None:
+        time.sleep(1)
+        if (datetime.datetime.now() - start).seconds > timeout:
+            os.kill(process.pid, signal.SIGKILL)
+            os.waitpid(-1, os.WNOHANG)
+            print("ERROR. Timeout cmd=%s" % cmd)
+            sys.exit(1)
+    if b"PASS" in process.stdout.read():
+        label = "(%s)" % test if test else ""
+        print("PASS execution. \talg=%s,\tworkload=%s%s" % (alg, workload, label))
+        return
+    print("FAILED execution. cmd=%s" % cmd)
+    sys.exit(1)
 
-# run TPCC tests
-jobs = {}
-for alg in algs: 
-	insert_job(alg, 'TPCC')
-run_all_test(jobs)
 
-os.system('cp config-std.h config.h')
-os.system('rm -rf %s temp.out' % build_dir)
+build_all()
+
+for alg in algs:
+    for wl in workloads:
+        binary = os.path.join(build_dir, "rundb_%s_%s" % (alg.lower(), wl.lower()))
+        if wl == 'TEST':
+            test_run(binary, alg, wl, 'read_write')
+        else:
+            test_run(binary, alg, wl)
+
+os.system("rm -f temp.out")
