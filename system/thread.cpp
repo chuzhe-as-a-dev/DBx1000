@@ -64,8 +64,6 @@ RC thread_t::run() {
 	stats.init(get_thd_id());
 	pthread_barrier_wait( &warmup_bar );
 
-	set_affinity(get_thd_id());
-
 	myrand rdm;
 	rdm.init(get_thd_id());
 	RC rc = RCOK;
@@ -127,9 +125,9 @@ RC thread_t::run() {
 		thd_txn_id ++;
 
 		if ((CC_ALG == HSTORE && !HSTORE_LOCAL_TS)
-				|| CC_ALG == MVCC 
+				|| CC_ALG == MVCC
 				|| CC_ALG == HEKATON
-				|| CC_ALG == TIMESTAMP) 
+				|| CC_ALG == TIMESTAMP)
 			m_txn->set_ts(get_next_ts());
 
 		rc = RCOK;
@@ -137,7 +135,7 @@ RC thread_t::run() {
 		if (WORKLOAD == TEST) {
 			uint64_t part_to_access[1] = {0};
 			rc = part_lock_man.lock(m_txn, &part_to_access[0], 1);
-		} else 
+		} else
 			rc = part_lock_man.lock(m_txn, m_query->part_to_access, m_query->part_num);
 #elif CC_ALG == VLL
 		vll_man.vllMainLoop(m_txn, m_query);
@@ -149,12 +147,12 @@ RC thread_t::run() {
 		// results should be the same.
 		m_txn->start_ts = get_next_ts(); 
 #endif
-		if (rc == RCOK) 
+		if (rc == RCOK)
 		{
 #if CC_ALG != VLL
 			if (WORKLOAD == TEST)
 				rc = runTest(m_txn);
-			else 
+			else
 				rc = m_txn->run_txn(m_query);
 #endif
 #if CC_ALG == HSTORE

@@ -25,9 +25,6 @@
 #include "config.h"
 #include "stats.h"
 #include "dl_detect.h"
-#ifndef NOGRAPHITE
-#include "carbon_user.h"
-#endif
 
 using namespace std;
 
@@ -64,9 +61,6 @@ extern VLLMan vll_man;
 extern bool volatile warmup_finish;
 extern bool volatile enable_thread_mem_pool;
 extern pthread_barrier_t warmup_bar;
-#ifndef NOGRAPHITE
-extern carbon_barrier_t enable_barrier;
-#endif
 
 /******************************************/
 // Global Parameter
@@ -115,12 +109,8 @@ enum RC { RCOK, Commit, Abort, WAIT, ERROR, FINISH};
 /* Thread */
 typedef uint64_t txnid_t;
 
-/* Txn */
-typedef uint64_t txn_t;
-
 /* Table and Row */
 typedef uint64_t rid_t; // row id
-typedef uint64_t pgid_t; // page id
 
 
 

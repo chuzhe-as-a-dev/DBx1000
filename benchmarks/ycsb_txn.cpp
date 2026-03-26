@@ -26,7 +26,7 @@ RC ycsb_txn_man::run_txn(base_query * query) {
 	ycsb_query * m_query = (ycsb_query *) query;
 	ycsb_wl * wl = (ycsb_wl *) h_wl;
 	itemid_t * m_item = NULL;
-  	row_cnt = 0;
+	row_cnt = 0;
 
 	for (uint32_t rid = 0; rid < m_query->request_cnt; rid ++) {
 		ycsb_request * req = &m_query->requests[rid];

@@ -12,9 +12,8 @@ class Query_thd;
 
 class ycsb_request {
 public:
-	access_t rtype; 
+	access_t rtype;
 	uint64_t key;
-	char value;
 	// only for (qtype == SCAN)
 	UInt32 scan_len;
 };

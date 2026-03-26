@@ -84,7 +84,7 @@ foreach(alg IN LISTS DBX_ALGS)
             $<TARGET_OBJECTS:storage_common>
             $<TARGET_OBJECTS:system_common>
             ${cc_objs}
-            $<TARGET_OBJECTS:benchmarks_${wl_lower}>
+            $<TARGET_OBJECTS:benchmarks_${wl_lower}_${alg_lower}>
             $<TARGET_OBJECTS:storage_${alg_lower}>
             $<TARGET_OBJECTS:system_${alg_lower}_${wl_lower}>
         )

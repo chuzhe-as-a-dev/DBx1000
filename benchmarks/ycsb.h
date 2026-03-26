@@ -35,7 +35,6 @@ public:
 	void init(thread_t * h_thd, workload * h_wl, uint64_t part_id); 
 	RC run_txn(base_query * query);
 private:
-	uint64_t row_cnt;
 	ycsb_wl * _wl;
 };
 

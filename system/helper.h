@@ -162,11 +162,6 @@ int get_thdid_from_txnid(uint64_t txnid);
 // key_to_part() is only for ycsb
 uint64_t key_to_part(uint64_t key);
 uint64_t get_part_id(void * addr);
-// TODO can the following two functions be merged?
-uint64_t merge_idx_key(uint64_t key_cnt, uint64_t * keys);
-uint64_t merge_idx_key(uint64_t key1, uint64_t key2);
-uint64_t merge_idx_key(uint64_t key1, uint64_t key2, uint64_t key3);
-
 extern timespec * res;
 inline uint64_t get_server_clock() {
 #if defined(__i386__)
@@ -186,19 +181,10 @@ inline uint64_t get_server_clock() {
 }
 
 inline uint64_t get_sys_clock() {
-#ifndef NOGRAPHITE
-	static volatile uint64_t fake_clock = 0;
-	if (warmup_finish)
-		return CarbonGetTime();   // in ns
-	else {
-		return ATOM_ADD_FETCH(fake_clock, 100);
-	}
-#else
-  #if TIME_ENABLE
+#if TIME_ENABLE
 	return get_server_clock();
-  #else
+#else
 	return 0;
-  #endif
 #endif
 }
 class myrand {
@@ -209,19 +195,3 @@ private:
 	uint64_t seed;
 };
 
-inline void set_affinity(uint64_t thd_id) {
-	return;
-	/*
-	// TOOD. the following mapping only works for swarm
-	// which has 4-socket, 10 physical core per socket, 
-	// 80 threads in total with hyper-threading
-	uint64_t a = thd_id % 40;
-	uint64_t processor_id = a / 10 + (a % 10) * 4;
-	processor_id += (thd_id / 40) * 40;
-	
-	cpu_set_t  mask;
-	CPU_ZERO(&mask);
-	CPU_SET(processor_id, &mask);
-	sched_setaffinity(0, sizeof(cpu_set_t), &mask);
-	*/
-}

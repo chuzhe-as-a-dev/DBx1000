@@ -58,10 +58,6 @@ void *
 Query_queue::threadInitQuery(void * This) {
 	Query_queue * query_queue = (Query_queue *)This;
 	uint32_t tid = ATOM_FETCH_ADD(_next_tid, 1);
-	
-	// set cpu affinity
-	set_affinity(tid);
-
 	query_queue->init_per_thread(tid);
 	return NULL;
 }

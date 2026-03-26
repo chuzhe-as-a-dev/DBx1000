@@ -129,9 +129,6 @@ void ycsb_query::gen_requests(uint64_t thd_id, workload * h_wl) {
 		assert(row_id < table_size);
 		uint64_t primary_key = row_id * g_virtual_part_cnt + part_id;
 		req->key = primary_key;
-		int64_t rint64;
-		lrand48_r(&_query_thd->buffer, &rint64);
-		req->value = rint64 % (1<<8);
 		// Make sure a single row is not accessed twice
 		if (req->rtype == RD || req->rtype == WR) {
 			if (all_keys.find(req->key) == all_keys.end()) {

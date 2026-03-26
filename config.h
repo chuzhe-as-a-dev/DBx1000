@@ -59,7 +59,6 @@
 // [ INDEX ]
 #define ENABLE_LATCH				false
 #define CENTRAL_INDEX				false
-#define CENTRAL_MANAGER 			false
 #define INDEX_STRUCT				IDX_HASH
 #define BTREE_ORDER 				16
 
@@ -103,8 +102,6 @@
 /***********************************************/
 // Logging
 /***********************************************/
-#define LOG_COMMAND					false
-#define LOG_REDO					false
 #define LOG_BATCH_TIME				10 // in ms
 
 /***********************************************/
@@ -158,11 +155,6 @@ extern TPCCTxnType 					g_tpcc_txn_type;
 #define LASTNAME_LEN 				16
 
 #define DIST_PER_WARE				10
-
-/***********************************************/
-// TODO centralized CC management. 
-/***********************************************/
-#define SPIN                        false
 
 /***********************************************/
 // Test cases

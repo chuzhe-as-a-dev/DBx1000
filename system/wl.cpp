@@ -106,12 +106,6 @@ RC workload::init_schema(string schema_file) {
 
 
 
-void workload::index_insert(string index_name, uint64_t key, row_t * row) {
-	assert(false);
-	INDEX * index = (INDEX *) indexes[index_name];
-	index_insert(index, key, row);
-}
-
 void workload::index_insert(INDEX * index, uint64_t key, row_t * row, int64_t part_id) {
 	uint64_t pid = part_id;
 	if (part_id == -1)

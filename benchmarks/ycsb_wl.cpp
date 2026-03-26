@@ -25,7 +25,6 @@ RC ycsb_wl::init() {
 	init_schema( path );
 	
 	init_table_parallel();
-//	init_table();
 	return RCOK;
 }
 
@@ -43,47 +42,8 @@ ycsb_wl::key_to_part(uint64_t key) {
 }
 
 RC ycsb_wl::init_table() {
-	RC rc;
-    uint64_t total_row = 0;
-    while (true) {
-    	for (UInt32 part_id = 0; part_id < g_part_cnt; part_id ++) {
-            if (total_row > g_synth_table_size)
-                goto ins_done;
-            row_t * new_row = NULL;
-			uint64_t row_id;
-            rc = the_table->get_new_row(new_row, part_id, row_id);
-            // TODO insertion of last row may fail after the table_size
-            // is updated. So never access the last record in a table
-			assert(rc == RCOK);
-			(void)rc;
-			uint64_t primary_key = total_row;
-			new_row->set_primary_key(primary_key);
-            new_row->set_value(0, &primary_key);
-			Catalog * schema = the_table->get_schema();
-			for (UInt32 fid = 0; fid < schema->get_field_cnt(); fid ++) {
-				int field_size = schema->get_field_size(fid);
-				char value[field_size];
-				for (int i = 0; i < field_size; i++) 
-					value[i] = (char)rand() % (1<<8) ;
-				new_row->set_value(fid, value);
-			}
-            itemid_t * m_item = 
-                (itemid_t *) mem_allocator.alloc( sizeof(itemid_t), part_id );
-			assert(m_item != NULL);
-            m_item->type = DT_row;
-            m_item->location = new_row;
-            m_item->valid = true;
-            uint64_t idx_key = primary_key;
-            rc = the_index->index_insert(idx_key, m_item, part_id);
-            assert(rc == RCOK);
-            (void)rc;
-            total_row ++;
-        }
-    }
-ins_done:
-    printf("[YCSB] Table \"MAIN_TABLE\" initialized.\n");
-    return RCOK;
-
+	init_table_parallel();
+	return RCOK;
 }
 
 // init table in parallel
@@ -107,9 +67,6 @@ void ycsb_wl::init_table_parallel() {
 
 void * ycsb_wl::init_table_slice() {
 	UInt32 tid = ATOM_FETCH_ADD(next_tid, 1);
-	// set cpu affinity
-	set_affinity(tid);
-
 	mem_allocator.register_thread(tid);
 	RC rc;
 	assert(g_synth_table_size % g_init_parallelism == 0);
@@ -129,7 +86,6 @@ void * ycsb_wl::init_table_slice() {
 		(void)rc;
 		uint64_t primary_key = key;
 		new_row->set_primary_key(primary_key);
-		new_row->set_value(0, &primary_key);
 		Catalog * schema = the_table->get_schema();
 		
 		for (UInt32 fid = 0; fid < schema->get_field_cnt(); fid ++) {
