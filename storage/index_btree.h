@@ -1,6 +1,4 @@
-#ifndef _BTREE_H_
-#define _BTREE_H_
-
+#pragma once
 #include "global.h"
 #include "helper.h"
 #include "index_base.h"
@@ -71,4 +69,3 @@ private:
 	UInt32 ** 		cur_idx_per_thd;
 };
 
-#endif

@@ -1,6 +1,4 @@
-#ifndef _CONFIG_H_
-#define _CONFIG_H_
-
+#pragma once
 /***********************************************/
 // Simulation + Hardware
 /***********************************************/
@@ -24,7 +22,7 @@
 #define STATS_ENABLE				true
 #define TIME_ENABLE					true 
 
-#define MEM_ALLIGN					8 
+#define MEM_ALIGN					8 
 
 // [THREAD_ALLOC]
 #define THREAD_ALLOC				false
@@ -210,4 +208,3 @@ extern TestCases					g_test_case;
 #define TS_HW						3
 #define TS_CLOCK					4
 
-#endif

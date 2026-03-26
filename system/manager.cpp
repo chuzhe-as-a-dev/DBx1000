@@ -105,7 +105,7 @@ void Manager::set_txn_man(txn_man * txn) {
 
 
 uint64_t Manager::hash(row_t * row) {
-	uint64_t addr = (uint64_t)row / MEM_ALLIGN;
+	uint64_t addr = (uint64_t)row / MEM_ALIGN;
     return (addr * 1103515247 + 12345) % BUCKET_CNT;
 }
  

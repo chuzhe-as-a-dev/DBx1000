@@ -1,6 +1,4 @@
-#ifndef ROW_VLL_H
-#define ROW_VLL_H
-
+#pragma once
 class Row_vll {
 public:
 	void init(row_t * row);
@@ -15,4 +13,3 @@ private:
     int cx;
 };
 
-#endif

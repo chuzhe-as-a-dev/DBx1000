@@ -1,6 +1,4 @@
-#ifndef _YCSB_QUERY_H_
-#define _YCSB_QUERY_H_
-
+#pragma once
 #include "global.h"
 #include "helper.h"
 #include "query.h"
@@ -39,4 +37,3 @@ private:
 	Query_thd * _query_thd;
 };
 
-#endif

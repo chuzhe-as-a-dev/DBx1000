@@ -1,6 +1,4 @@
-#ifndef _VLL_H_
-#define _VLL_H_
-
+#pragma once
 #include "global.h"
 #include "helper.h"
 #include "query.h"
@@ -34,4 +32,3 @@ private:
 	void returnQEntry(TxnQEntry * entry);
 };
 
-#endif

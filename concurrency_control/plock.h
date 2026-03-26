@@ -1,6 +1,4 @@
-#ifndef _PLOCK_H_
-#define _PLOCK_H_
-
+#pragma once
 #include "global.h"
 #include "helper.h"
 
@@ -30,4 +28,3 @@ private:
 	PartMan ** part_mans;
 };
 
-#endif

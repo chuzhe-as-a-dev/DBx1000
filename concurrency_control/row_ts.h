@@ -1,6 +1,4 @@
-#ifndef ROW_TS_H
-#define ROW_TS_H
-
+#pragma once
 class table_t;
 class Catalog;
 class txn_man;
@@ -45,4 +43,3 @@ private:
 	uint64_t preq_len;
 };
 
-#endif

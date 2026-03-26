@@ -1,6 +1,4 @@
-#ifndef _SYNTH_BM_H_
-#define _SYNTH_BM_H_
-
+#pragma once
 #include "wl.h"
 #include "txn.h"
 #include "global.h"
@@ -38,4 +36,3 @@ private:
 	ycsb_wl * _wl;
 };
 
-#endif

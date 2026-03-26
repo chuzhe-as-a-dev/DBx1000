@@ -10,9 +10,9 @@
 #include "occ.h"
 #include "vll.h"
 
-void * f(void *);
+void * worker_thread_entry(void *);
 
-thread_t ** m_thds;
+thread_t ** g_threads;
 
 // defined in parser.cpp
 void parser(int argc, char * argv[]);
@@ -46,9 +46,9 @@ int main(int argc, char* argv[])
 	
 	uint64_t thd_cnt = g_thread_cnt;
 	pthread_t p_thds[thd_cnt - 1];
-	m_thds = new thread_t * [thd_cnt];
+	g_threads = new thread_t * [thd_cnt];
 	for (uint32_t i = 0; i < thd_cnt; i++)
-		m_thds[i] = (thread_t *) _mm_malloc(sizeof(thread_t), 64);
+		g_threads[i] = (thread_t *) _mm_malloc(sizeof(thread_t), 64);
 	// query_queue should be the last one to be initialized!!!
 	// because it collects txn latency
 	query_queue = (Query_queue *) _mm_malloc(sizeof(Query_queue), 64);
@@ -65,15 +65,15 @@ int main(int argc, char* argv[])
 #endif
 
 	for (uint32_t i = 0; i < thd_cnt; i++) 
-		m_thds[i]->init(i, m_wl);
+		g_threads[i]->init(i, m_wl);
 
 	if (WARMUP > 0){
 		printf("WARMUP start!\n");
 		for (uint32_t i = 0; i < thd_cnt - 1; i++) {
 			uint64_t vid = i;
-			pthread_create(&p_thds[i], NULL, f, (void *)vid);
+			pthread_create(&p_thds[i], NULL, worker_thread_entry, (void *)vid);
 		}
-		f((void *)(thd_cnt - 1));
+		worker_thread_entry((void *)(thd_cnt - 1));
 		for (uint32_t i = 0; i < thd_cnt - 1; i++)
 			pthread_join(p_thds[i], NULL);
 		printf("WARMUP finished!\n");
@@ -85,9 +85,9 @@ int main(int argc, char* argv[])
 	int64_t starttime = get_server_clock();
 	for (uint32_t i = 0; i < thd_cnt - 1; i++) {
 		uint64_t vid = i;
-		pthread_create(&p_thds[i], NULL, f, (void *)vid);
+		pthread_create(&p_thds[i], NULL, worker_thread_entry, (void *)vid);
 	}
-	f((void *)(thd_cnt - 1));
+	worker_thread_entry((void *)(thd_cnt - 1));
 	for (uint32_t i = 0; i < thd_cnt - 1; i++) 
 		pthread_join(p_thds[i], NULL);
 	int64_t endtime = get_server_clock();
@@ -102,8 +102,8 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void * f(void * id) {
+void * worker_thread_entry(void * id) {
 	uint64_t tid = (uint64_t)id;
-	m_thds[tid]->run();
+	g_threads[tid]->run();
 	return NULL;
 }

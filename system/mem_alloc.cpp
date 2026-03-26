@@ -39,7 +39,7 @@ Arena::alloc() {
 	FreeBlock * block;
 	if (_head == NULL) {
 		// not in the list. allocate from the buffer
-		int size = (_block_size + sizeof(FreeBlock) + (MEM_ALLIGN - 1)) & ~(MEM_ALLIGN-1);
+		int size = (_block_size + sizeof(FreeBlock) + (MEM_ALIGN - 1)) & ~(MEM_ALIGN-1);
 		if (_size_in_buffer < size) {
 			_buffer = (char *) malloc(_block_size * 40960);
 			_size_in_buffer = _block_size * 40960; // * 8;

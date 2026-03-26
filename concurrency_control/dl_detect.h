@@ -1,6 +1,4 @@
-#ifndef _DL_DETECT_
-#define _DL_DETECT_
-
+#pragma once
 #include <limits.h>
 #include <list>
 #include <stdint.h>
@@ -9,7 +7,7 @@
 //#include "global.h"
 //#include "helper.h"
 
-// The denpendency information per thread
+// The dependency information per thread
 struct DepThd {
     std::list<uint64_t> adj;    // Pointer to an array containing adjacency lists
 	pthread_mutex_t lock; 
@@ -58,4 +56,3 @@ private:
 	bool isCyclic(uint64_t txnid, DetectData * detect_data); // return if "thd" is causing a cycle
 };
 
-#endif

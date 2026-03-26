@@ -1,6 +1,4 @@
-#ifndef ROW_LOCK_H
-#define ROW_LOCK_H
-
+#pragma once
 struct LockEntry {
     lock_t type;
     txn_man * txn;
@@ -37,4 +35,3 @@ private:
 	LockEntry * waiters_tail;
 };
 
-#endif

@@ -1,6 +1,4 @@
-#ifndef _TPCC_QUERY_H_
-#define _TPCC_QUERY_H_
-
+#pragma once
 #include "global.h"
 #include "helper.h"
 #include "query.h"
@@ -55,4 +53,3 @@ private:
 	void gen_order_status(uint64_t thd_id);
 };
 
-#endif

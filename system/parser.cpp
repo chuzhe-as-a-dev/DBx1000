@@ -37,7 +37,7 @@ void print_usage() {
 	printf("\t-TuINT      ; WH_UPDATE\n");
 	printf("  [TEST]:\n");
 	printf("\t-Ar         ; Test READ_WRITE\n");
-	printf("\t-Ac         ; Test CONFLIT\n");
+	printf("\t-Ac         ; Test CONFLICT\n");
 }
 
 void parser(int argc, char * argv[]) {

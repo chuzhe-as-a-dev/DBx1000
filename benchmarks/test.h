@@ -1,6 +1,4 @@
-#ifndef _TEST_H_
-#define _TEST_H_
-
+#pragma once
 #include "global.h"
 #include "txn.h"
 #include "wl.h"
@@ -33,4 +31,3 @@ private:
 	TestWorkload * _wl;
 };
 
-#endif

@@ -1,6 +1,4 @@
-#ifndef _MEM_ALLOC_H_
-#define _MEM_ALLOC_H_
-
+#pragma once
 #include "global.h"
 #include <map>
 
@@ -45,4 +43,3 @@ private:
     pthread_mutex_t         map_lock; // only used for pid_to_arena update
 };
 
-#endif

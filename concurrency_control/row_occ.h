@@ -1,6 +1,4 @@
-#ifndef ROW_OCC_H
-#define ROW_OCC_H
-
+#pragma once
 class table_t;
 class Catalog;
 class txn_man;
@@ -24,4 +22,3 @@ private:
 	ts_t 				wts;
 };
 
-#endif
