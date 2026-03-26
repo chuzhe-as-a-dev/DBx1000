@@ -10,8 +10,8 @@ void Manager::init() {
 	_min_ts = 0;
 	_epoch = (uint64_t *) _mm_malloc(sizeof(uint64_t), 64);
 	_last_epoch_update_time = (ts_t *) _mm_malloc(sizeof(uint64_t), 64);
-	_epoch = 0;
-	_last_epoch_update_time = 0;
+	*_epoch = 0;
+	*_last_epoch_update_time = 0;
 	all_ts = (ts_t volatile **) _mm_malloc(sizeof(ts_t *) * g_thread_cnt, 64);
 	for (uint32_t i = 0; i < g_thread_cnt; i++) 
 		all_ts[i] = (ts_t *) _mm_malloc(sizeof(ts_t), 64);
