@@ -5,24 +5,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build
 
 ```bash
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+cmake -S . -B build
+cmake --build build --parallel
 ```
 
-The output binary is `build/rundb`.
+This builds one binary per (algorithm, workload) combination: `build/rundb_<alg>_<wl>`.
 
-Default build type is `RelWithDebInfo`. To change: `cmake -DCMAKE_BUILD_TYPE=Debug ..`
+Default build type is `RelWithDebInfo`. To change: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug`
 
 Build flags: `-Wall -Werror` — all warnings are treated as errors.
+
+### CMake options
+
+- `-DDBX_TEST_MODE=ON` — use smaller table sizes for faster testing
+
+To change which algorithms or workloads are built, edit `DBX_ALGS` / `DBX_WORKLOADS` in `CMakeLists.txt`.
+
+### Running tests
+
+```bash
+python3 test.py
+```
 
 ## Run
 
 ```bash
-./build/rundb [options]
+./build/rundb_<alg>_<wl> [options]
 ```
 
-Key runtime flags (override compile-time config.h defaults):
+Example: `./build/rundb_tictoc_ycsb -t8`
+
+Key runtime flags:
 - `-tINT` — thread count
 - `-rFLOAT` / `-wFLOAT` — read/write percentage (YCSB)
 - `-zFLOAT` — Zipf theta
@@ -30,18 +43,14 @@ Key runtime flags (override compile-time config.h defaults):
 - `-o FILE` — output file
 - `--param=value` — override string params (e.g. `--validation_lock=no-wait`)
 
-Run `./build/rundb -h` for full usage.
-
 ## Configuration
 
-All compile-time configuration lives in [config.h](config.h). Key parameters:
+Compile-time defaults live in [config.h](config.h). CMake `-D` flags override them; see the `#ifndef` guards at the top of config.h. Key parameters:
 
-- `CC_ALG` — concurrency control algorithm: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`
-- `WORKLOAD` — `YCSB` or `TPCC` (or `TEST`)
-- `THREAD_CNT` — number of worker threads
+- `CC_ALG` — set per binary via `-DDBX_ALGS`; valid values: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`
+- `WORKLOAD` — set per binary via `-DDBX_WORKLOADS`; `YCSB` or `TPCC` (or `TEST`)
+- `THREAD_CNT` — number of worker threads (compile-time; set in config.h)
 - `INDEX_STRUCT` — `IDX_HASH` or `IDX_BTREE`
-
-After changing `config.h`, rebuild.
 
 ## Architecture
 
