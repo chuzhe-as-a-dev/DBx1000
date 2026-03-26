@@ -172,7 +172,7 @@ RC thread_t::run() {
 				drand48_r(&buffer, &r);
 				penalty = r * ABORT_PENALTY;
 			}
-			if (!_abort_buffer_enable)
+			if (!_abort_buffer_enable || WORKLOAD == TEST)
 				usleep(penalty / 1000);
 			else {
 				assert(_abort_buffer_empty_slots > 0);
@@ -246,11 +246,18 @@ thread_t::get_next_ts() {
 
 RC thread_t::runTest(txn_man * txn)
 {
+#if WORKLOAD == TEST
 	RC rc = RCOK;
 	if (g_test_case == READ_WRITE) {
 		rc = ((TestTxnMan *)txn)->run_txn(g_test_case, 0);
+		// Refresh the transaction's timestamp before the second run so that
+		// timestamp-based CC algorithms (HEKATON, MVCC, TIMESTAMP) do not
+		// reject the read as stale after the write transaction committed.
 #if CC_ALG == OCC
-		txn->start_ts = get_next_ts(); 
+		txn->start_ts = get_next_ts();
+#elif CC_ALG == HEKATON || CC_ALG == MVCC || CC_ALG == TIMESTAMP
+		txn->set_ts(get_next_ts());
+		glob_manager->add_ts(get_thd_id(), txn->get_ts());
 #endif
 		rc = ((TestTxnMan *)txn)->run_txn(g_test_case, 1);
 		printf("READ_WRITE TEST PASSED\n");
@@ -260,9 +267,13 @@ RC thread_t::runTest(txn_man * txn)
 		rc = ((TestTxnMan *)txn)->run_txn(g_test_case, 0);
 		if (rc == RCOK)
 			return FINISH;
-		else 
+		else
 			return rc;
 	}
 	assert(false);
 	return RCOK;
+#else
+	assert(false);
+	return RCOK;
+#endif
 }

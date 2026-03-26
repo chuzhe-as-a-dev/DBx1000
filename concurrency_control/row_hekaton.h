@@ -33,6 +33,7 @@ private:
 	uint32_t 		reserveRow(txn_man * txn);
 	void 			doubleHistory();
 
+	table_t *		_table;
 	uint32_t 		_his_latest;
 	uint32_t 		_his_oldest;
 	WriteHisEntry * _write_history; // circular buffer

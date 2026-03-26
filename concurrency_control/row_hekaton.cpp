@@ -8,6 +8,7 @@
 #if CC_ALG == HEKATON
 
 void Row_hekaton::init(row_t * row) {
+	_table = row->table;
 	_his_len = 4;
 
 	_write_history = (WriteHisEntry *) _mm_malloc(sizeof(WriteHisEntry) * _his_len, 64);
@@ -81,6 +82,7 @@ RC Row_hekaton::access(txn_man * txn, TsType type, row_t * row) {
 					break;
 			}
 			assert(find);
+			(void) find;
 		}
 	} else if (type == P_REQ) {
 		if (_exists_prewrite || ts < _write_history[_his_latest].begin) {
@@ -142,6 +144,7 @@ Row_hekaton::reserveRow(txn_man * txn)
 	if (!_write_history[idx].row) {
 		_write_history[idx].row = (row_t *) _mm_malloc(sizeof(row_t), 64);
 		_write_history[idx].row->init(MAX_TUPLE_SIZE);
+		_write_history[idx].row->table = _table;
 	}
 	return idx;
 }

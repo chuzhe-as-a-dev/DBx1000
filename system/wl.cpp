@@ -91,6 +91,8 @@ RC workload::init_schema(string schema_file) {
 	#elif WORKLOAD == TPCC
 			assert(tables[tname] != NULL);
 			index->init(part_cnt, tables[tname], stoi( items[1] ) * part_cnt);
+	#elif WORKLOAD == TEST
+			index->init(part_cnt, tables[tname], 1024);
 	#endif
 #else
 			index->init(part_cnt, tables[tname]);
