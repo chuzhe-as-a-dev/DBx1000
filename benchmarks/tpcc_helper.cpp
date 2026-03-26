@@ -1,4 +1,5 @@
 #include "tpcc_helper.h"
+#include <mutex>
 
 drand48_data ** tpcc_buffer;
 
@@ -60,42 +61,28 @@ uint64_t URand(uint64_t x, uint64_t y, uint64_t thd_id) {
 }
 
 // TPC-C non-uniform random: ((URand(0,A) | URand(x,y)) + C) % (y-x+1) + x.
-// C is a per-A constant initialised once on first call and cached to satisfy
-// the TPC-C requirement that the same C is used across the entire run.
+// C_255/C_1023/C_8191 are initialized once (thread-safely) on the first call
+// to satisfy the TPC-C requirement that the same C is used across the entire run.
 // A must be one of {255, 1023, 8191} (used for NURand of customer/item IDs). (AI-generated)
+static std::once_flag nurnd_init_flag;
+static uint64_t C_255, C_1023, C_8191;
+
 uint64_t NURand(uint64_t A, uint64_t x, uint64_t y, uint64_t thd_id) {
-  static bool C_255_init = false;
-  static bool C_1023_init = false;
-  static bool C_8191_init = false;
-  static uint64_t C_255, C_1023, C_8191;
-  int C = 0;
-  switch(A) {
-    case 255:
-      if(!C_255_init) {
-        C_255 = (uint64_t) URand(0,255, thd_id);
-        C_255_init = true;
-      }
-      C = C_255;
-      break;
-    case 1023:
-      if(!C_1023_init) {
-        C_1023 = (uint64_t) URand(0,1023, thd_id);
-        C_1023_init = true;
-      }
-      C = C_1023;
-      break;
-    case 8191:
-      if(!C_8191_init) {
-        C_8191 = (uint64_t) URand(0,8191, thd_id);
-        C_8191_init = true;
-      }
-      C = C_8191;
-      break;
+  std::call_once(nurnd_init_flag, [thd_id]() {
+    C_255  = URand(0, 255,  thd_id);
+    C_1023 = URand(0, 1023, thd_id);
+    C_8191 = URand(0, 8191, thd_id);
+  });
+  uint64_t C;
+  switch (A) {
+    case 255:  C = C_255;  break;
+    case 1023: C = C_1023; break;
+    case 8191: C = C_8191; break;
     default:
       M_ASSERT(false, "Error! NURand\n");
       exit(-1);
   }
-  return(((URand(0,A, thd_id) | URand(x,y, thd_id))+C)%(y-x+1))+x;
+  return (((URand(0, A, thd_id) | URand(x, y, thd_id)) + C) % (y - x + 1)) + x;
 }
 
 uint64_t MakeAlphaString(int min, int max, char* str, uint64_t thd_id) {
