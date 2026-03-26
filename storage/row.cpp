@@ -134,7 +134,7 @@ void row_t::copy(row_t * src) {
 }
 
 void row_t::free_row() {
-	free(data);
+	_mm_free(data);
 }
 
 // Acquires access to a row, dispatching to the compiled-in CC algorithm.
