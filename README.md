@@ -2,49 +2,78 @@
 
 -----------------
 
-DBx1000 is a single node OLTP database management system (DBMS). The goal of DBx1000 is to make DBMS scalable on future 1000-core processors. We implemented all the seven classic concurrency control schemes in DBx1000. They exhibit different scalability properties under different workloads. 
+DBx1000 is a single-node in-memory OLTP database benchmark for evaluating concurrency control (CC) algorithms at high thread counts. It implements 11 CC algorithms and two workloads (YCSB and TPC-C).
 
-The concurrency control scalability study is described in the following paper. 
+The original concurrency control scalability study is described in:
 
 [1] Xiangyao Yu, George Bezerra, Andrew Pavlo, Srinivas Devadas, Michael Stonebraker, [Staring into the Abyss: An Evaluation of Concurrency Control with One Thousand Cores](http://www.vldb.org/pvldb/vol8/p209-yu.pdf), VLDB 2014
-    
-    
-    
-Build & Test
-------------
 
-DBx1000 uses CMake as its supported build system.
+Build
+-----
 
-To build the database.
+Requires CMake 3.16+ and a C++11 compiler.
 
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-    cmake --build build --parallel
+```bash
+cmake -S . -B build
+cmake --build build --parallel
+```
 
-To test the database
+The build produces one binary per (algorithm, workload) combination:
 
-    python test.py
-    
-Configuration
--------------
+```
+build/rundb_<alg>_<wl>
+```
 
-DBMS configurations can be changed in the config.h file. Please refer to README for the meaning of each configuration. Here we only list several most important ones. 
+For example: `build/rundb_tictoc_ycsb`, `build/rundb_hekaton_tpcc`.
 
-    THREAD_CNT        : Number of worker threads running in the database.
-    WORKLOAD          : Supported workloads include YCSB and TPCC
-    CC_ALG            : Concurrency control algorithm. Seven algorithms are supported 
-                        (DL_DETECT, NO_WAIT, HEKATON, SILO, TICTOC) 
-    MAX_TXN_PER_PART  : Number of transactions to run per thread per partition.
-                        
-Configurations can also be specified as command argument at runtime. Run the following command for a full list of program argument. 
-    
-    ./build/rundb -h
+To change which algorithms or workloads are compiled, edit `DBX_ALGS` / `DBX_WORKLOADS` in `CMakeLists.txt`. Supported values:
+
+- **CC algorithms**: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`
+- **Workloads**: `YCSB`, `TPCC`, `TEST`
+
+Test
+----
+
+```bash
+python3 test.py
+```
 
 Run
 ---
 
-The DBMS can be run with 
+```bash
+./build/rundb_<alg>_<wl> [options]
+```
 
-    ./build/rundb
+For a full list of options:
+
+```bash
+./build/rundb_<alg>_<wl> -h
+```
+
+Key flags:
+
+| Flag | Description |
+|------|-------------|
+| `-tINT` | Number of worker threads |
+| `-rFLOAT` / `-wFLOAT` | Read / write fraction (YCSB) |
+| `-zFLOAT` | Zipf theta (YCSB skew; 0 = uniform) |
+| `-nINT` | Number of warehouses (TPC-C) |
+| `-o FILE` | Output file for statistics |
+| `--param=value` | Override a runtime string parameter |
+
+Configuration
+-------------
+
+Compile-time defaults are in `config.h`. The most important parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `CC_ALG` | Concurrency control algorithm (set per binary) |
+| `WORKLOAD` | `YCSB` or `TPCC` (set per binary) |
+| `THREAD_CNT` | Default thread count (overridden at runtime by `-t`) |
+| `MAX_TXN_PER_PART` | Transactions per thread before simulation ends |
+| `INDEX_STRUCT` | `IDX_HASH` (default) or `IDX_BTREE` |
 
 Outputs
 -------
