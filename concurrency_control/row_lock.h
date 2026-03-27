@@ -1,4 +1,10 @@
 #pragma once
+
+#include "global.h"
+
+class row_t;
+class txn_man;
+
 struct LockEntry {
   lock_t type;
   txn_man* txn;

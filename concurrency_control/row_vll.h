@@ -1,4 +1,9 @@
 #pragma once
+
+#include "global.h"
+
+class row_t;
+
 class Row_vll {
  public:
   void init(row_t* row);

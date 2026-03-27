@@ -1,4 +1,8 @@
 #pragma once
+
+#include "global.h"
+
+class row_t;
 class table_t;
 class Catalog;
 class txn_man;
