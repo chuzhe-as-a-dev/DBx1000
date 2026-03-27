@@ -46,6 +46,14 @@ private:
 	
 	void init_permutation(uint64_t * perm_c_id, uint64_t wid);
 
+	static void * threadInitItem(void * This);
+	static void * threadInitWh(void * This);
+	static void * threadInitDist(void * This);
+	static void * threadInitStock(void * This);
+	static void * threadInitCust(void * This);
+	static void * threadInitHist(void * This);
+	static void * threadInitOrder(void * This);
+
 	static void * threadInitWarehouse(void * This);
 };
 
