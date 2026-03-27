@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include "global.h"
 
@@ -15,22 +15,21 @@ class Timestamp;
 class Mvcc;
 
 // this is the base class for all workload
-class workload
-{
-public:
-	// tables indexed by table name
-	std::map<std::string, table_t *> tables;
-	std::map<std::string, INDEX *> indexes;
+class workload {
+ public:
+  // tables indexed by table name
+  std::map<std::string, table_t*> tables;
+  std::map<std::string, INDEX*> indexes;
 
-	
-	// initialize the tables and indexes.
-	virtual RC init();
-	virtual RC init_schema(std::string schema_file);
-	virtual RC init_table()=0;
-	virtual RC get_txn_man(txn_man *& txn_manager, thread_t * h_thd)=0;
-	
-	bool sim_done;
-protected:
-	void index_insert(INDEX * index, uint64_t key, row_t * row, int64_t part_id = -1);
+  // initialize the tables and indexes.
+  virtual RC init();
+  virtual RC init_schema(std::string schema_file);
+  virtual RC init_table() = 0;
+  virtual RC get_txn_man(txn_man*& txn_manager, thread_t* h_thd) = 0;
+
+  bool sim_done;
+
+ protected:
+  void index_insert(INDEX* index, uint64_t key, row_t* row,
+                    int64_t part_id = -1);
 };
-

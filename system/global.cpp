@@ -11,13 +11,13 @@
 mem_alloc mem_allocator;
 Stats stats;
 DL_detect dl_detector;
-Manager * glob_manager;
-Query_queue * query_queue;
+Manager* glob_manager;
+Query_queue* query_queue;
 Plock part_lock_man;
 OptCC occ_man;
 #if CC_ALG == VLL
 VLLMan vll_man;
-#endif 
+#endif
 
 bool volatile warmup_finish = false;
 bool volatile enable_thread_mem_pool = false;
@@ -57,14 +57,14 @@ UInt32 g_init_parallelism = INIT_PARALLELISM;
 UInt32 g_num_wh = NUM_WH;
 double g_perc_payment = PERC_PAYMENT;
 bool g_wh_update = WH_UPDATE;
-char * output_file = NULL;
+char* output_file = NULL;
 
 std::map<std::string, std::string> g_params;
 
 #if TPCC_SMALL
 UInt32 g_max_items = 10000;
 UInt32 g_cust_per_dist = 2000;
-#else 
+#else
 UInt32 g_max_items = 100000;
 UInt32 g_cust_per_dist = 3000;
 #endif
