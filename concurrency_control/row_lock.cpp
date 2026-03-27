@@ -1,8 +1,9 @@
+#include "row_lock.h"
+
+#include "manager.h"
+#include "mem_alloc.h"
 #include "row.h"
 #include "txn.h"
-#include "row_lock.h"
-#include "mem_alloc.h"
-#include "manager.h"
 
 void Row_lock::init(row_t* row) {
   _row = row;

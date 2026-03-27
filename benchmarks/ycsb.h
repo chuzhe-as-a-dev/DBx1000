@@ -1,8 +1,8 @@
 #pragma once
-#include "wl.h"
-#include "txn.h"
 #include "global.h"
 #include "helper.h"
+#include "txn.h"
+#include "wl.h"
 
 class ycsb_query;
 

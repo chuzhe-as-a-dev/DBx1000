@@ -1,19 +1,21 @@
-#include <mm_malloc.h>
-#include "global.h"
-#include "table.h"
-#include "catalog.h"
 #include "row.h"
-#include "txn.h"
-#include "row_lock.h"
-#include "row_ts.h"
-#include "row_mvcc.h"
-#include "row_hekaton.h"
-#include "row_occ.h"
-#include "row_tictoc.h"
-#include "row_silo.h"
-#include "row_vll.h"
-#include "mem_alloc.h"
+
+#include <mm_malloc.h>
+
+#include "catalog.h"
+#include "global.h"
 #include "manager.h"
+#include "mem_alloc.h"
+#include "row_hekaton.h"
+#include "row_lock.h"
+#include "row_mvcc.h"
+#include "row_occ.h"
+#include "row_silo.h"
+#include "row_tictoc.h"
+#include "row_ts.h"
+#include "row_vll.h"
+#include "table.h"
+#include "txn.h"
 
 RC row_t::init(table_t* host_table, uint64_t part_id, uint64_t row_id) {
   _row_id = row_id;

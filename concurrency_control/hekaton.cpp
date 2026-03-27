@@ -1,7 +1,7 @@
-#include "txn.h"
+#include "manager.h"
 #include "row.h"
 #include "row_hekaton.h"
-#include "manager.h"
+#include "txn.h"
 
 #if CC_ALG == HEKATON
 

@@ -1,8 +1,10 @@
 #include "row_tictoc.h"
+
+#include <mm_malloc.h>
+
+#include "mem_alloc.h"
 #include "row.h"
 #include "txn.h"
-#include "mem_alloc.h"
-#include <mm_malloc.h>
 
 #if CC_ALG == TICTOC
 

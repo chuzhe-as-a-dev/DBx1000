@@ -1,5 +1,5 @@
-#include "test.h"
 #include "row.h"
+#include "test.h"
 
 void TestTxnMan::init(thread_t* h_thd, workload* h_wl, uint64_t thd_id) {
   txn_man::init(h_thd, h_wl, thd_id);

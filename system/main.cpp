@@ -1,14 +1,14 @@
 #include "global.h"
-#include "ycsb.h"
-#include "tpcc.h"
-#include "test.h"
-#include "thread.h"
 #include "manager.h"
 #include "mem_alloc.h"
-#include "query.h"
-#include "plock.h"
 #include "occ.h"
+#include "plock.h"
+#include "query.h"
+#include "test.h"
+#include "thread.h"
+#include "tpcc.h"
 #include "vll.h"
+#include "ycsb.h"
 
 void* worker_thread_entry(void*);
 

@@ -1,6 +1,6 @@
 #pragma once
-#include "wl.h"
 #include "txn.h"
+#include "wl.h"
 
 class table_t;
 class INDEX;

@@ -1,5 +1,6 @@
-#include "mem_alloc.h"
 #include "index_btree.h"
+
+#include "mem_alloc.h"
 #include "row.h"
 
 RC index_btree::init(uint64_t part_cnt) {

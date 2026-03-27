@@ -1,14 +1,15 @@
 #include "txn.h"
-#include "row.h"
-#include "wl.h"
-#include "ycsb.h"
-#include "thread.h"
-#include "mem_alloc.h"
-#include "occ.h"
-#include "table.h"
+
 #include "catalog.h"
 #include "index_btree.h"
 #include "index_hash.h"
+#include "mem_alloc.h"
+#include "occ.h"
+#include "row.h"
+#include "table.h"
+#include "thread.h"
+#include "wl.h"
+#include "ycsb.h"
 
 // Allocates the per-transaction access array (MAX_ROW_PER_TXN entries,
 // NULL-init'd so first access to a slot triggers lazy allocation of the Access

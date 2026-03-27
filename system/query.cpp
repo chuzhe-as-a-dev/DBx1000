@@ -1,11 +1,13 @@
-#include <sched.h>
 #include "query.h"
+
+#include <sched.h>
+
 #include "mem_alloc.h"
-#include "wl.h"
 #include "table.h"
-#include "ycsb_query.h"
-#include "tpcc_query.h"
 #include "tpcc_helper.h"
+#include "tpcc_query.h"
+#include "wl.h"
+#include "ycsb_query.h"
 
 /*************************************************/
 //     class Query_queue

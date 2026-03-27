@@ -1,9 +1,10 @@
-#include "txn.h"
-#include "row.h"
 #include "row_ts.h"
-#include "mem_alloc.h"
+
 #include "manager.h"
+#include "mem_alloc.h"
+#include "row.h"
 #include "stdint.h"
+#include "txn.h"
 
 void Row_ts::init(row_t* row) {
   _row = row;

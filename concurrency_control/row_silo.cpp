@@ -1,7 +1,8 @@
-#include "txn.h"
-#include "row.h"
 #include "row_silo.h"
+
 #include "mem_alloc.h"
+#include "row.h"
+#include "txn.h"
 
 #if CC_ALG == SILO
 

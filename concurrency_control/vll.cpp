@@ -1,13 +1,14 @@
 #include "vll.h"
-#include "txn.h"
-#include "table.h"
-#include "row.h"
-#include "row_vll.h"
-#include "ycsb_query.h"
-#include "ycsb.h"
-#include "wl.h"
+
 #include "catalog.h"
 #include "mem_alloc.h"
+#include "row.h"
+#include "row_vll.h"
+#include "table.h"
+#include "txn.h"
+#include "wl.h"
+#include "ycsb.h"
+#include "ycsb_query.h"
 #if CC_ALG == VLL
 
 void VLLMan::init() {

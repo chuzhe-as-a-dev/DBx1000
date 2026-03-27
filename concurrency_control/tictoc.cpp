@@ -1,7 +1,7 @@
-#include "txn.h"
+#include "manager.h"
 #include "row.h"
 #include "row_tictoc.h"
-#include "manager.h"
+#include "txn.h"
 
 #if CC_ALG == TICTOC
 
@@ -236,7 +236,7 @@ final:
 //				Access * access = accesses[ i ];
 //				if (access->type == WR)
 //					access->orig_row->manager->write_data(access->data,
-//max_wts); 				access->orig_row->manager->release();
+// max_wts); 				access->orig_row->manager->release();
 //			}
 #endif
     }

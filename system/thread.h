@@ -4,6 +4,7 @@
 
 class workload;
 class base_query;
+class txn_man;
 
 class thread_t {
  public:

@@ -1,9 +1,9 @@
-#include "test.h"
-#include "table.h"
-#include "row.h"
-#include "mem_alloc.h"
-#include "index_hash.h"
 #include "index_btree.h"
+#include "index_hash.h"
+#include "mem_alloc.h"
+#include "row.h"
+#include "table.h"
+#include "test.h"
 #include "thread.h"
 
 RC TestWorkload::init() {

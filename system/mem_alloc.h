@@ -1,6 +1,7 @@
 #pragma once
-#include "global.h"
 #include <map>
+
+#include "global.h"
 
 const int SizeNum = 4;
 const UInt32 BlockSizes[] = {32, 64, 256, 1024};

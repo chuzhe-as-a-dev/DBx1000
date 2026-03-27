@@ -1,9 +1,10 @@
+#include "table.h"
+
+#include "catalog.h"
 #include "global.h"
 #include "helper.h"
-#include "table.h"
-#include "catalog.h"
-#include "row.h"
 #include "mem_alloc.h"
+#include "row.h"
 
 void table_t::init(Catalog* schema) {
   this->table_name = schema->table_name;

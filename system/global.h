@@ -1,30 +1,31 @@
 #pragma once
 
-#include <cstdint>
-#include <unistd.h>
-#include <cstddef>
-#include <cstdlib>
-#include <cassert>
-#include <cstdio>
-#include <iostream>
-#include <fstream>
-#include <cstring>
-#include <typeinfo>
-#include <list>
 #include <mm_malloc.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <fstream>
+#include <iostream>
+#include <list>
 #include <map>
 #include <set>
-#include <string>
-#include <vector>
 #include <sstream>
-#include <ctime>
-#include <sys/time.h>
-#include <cmath>
+#include <string>
+#include <typeinfo>
+#include <vector>
 
-#include "pthread.h"
 #include "config.h"
-#include "stats.h"
 #include "dl_detect.h"
+#include "pthread.h"
+#include "stats.h"
 
 class mem_alloc;
 class Stats;

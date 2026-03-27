@@ -1,10 +1,11 @@
+#include "occ.h"
+
 #include "global.h"
 #include "helper.h"
-#include "txn.h"
-#include "occ.h"
 #include "manager.h"
 #include "mem_alloc.h"
 #include "row_occ.h"
+#include "txn.h"
 
 set_ent::set_ent() {
   set_size = 0;

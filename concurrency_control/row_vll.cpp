@@ -1,7 +1,8 @@
-#include "row.h"
 #include "row_vll.h"
+
 #include "global.h"
 #include "helper.h"
+#include "row.h"
 
 void Row_vll::init(row_t* row) {
   _row = row;

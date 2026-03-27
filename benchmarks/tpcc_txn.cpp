@@ -1,14 +1,14 @@
-#include "tpcc.h"
-#include "tpcc_query.h"
-#include "tpcc_helper.h"
-#include "query.h"
-#include "wl.h"
-#include "thread.h"
-#include "table.h"
-#include "row.h"
-#include "index_hash.h"
 #include "index_btree.h"
+#include "index_hash.h"
+#include "query.h"
+#include "row.h"
+#include "table.h"
+#include "thread.h"
+#include "tpcc.h"
 #include "tpcc_const.h"
+#include "tpcc_helper.h"
+#include "tpcc_query.h"
+#include "wl.h"
 
 void tpcc_txn_man::init(thread_t* h_thd, workload* h_wl, uint64_t thd_id) {
   txn_man::init(h_thd, h_wl, thd_id);
@@ -439,8 +439,8 @@ EXEC SQL INSERT INTO NEW_ORDER (no_o_id, no_d_id, no_w_id)
 #if !TPCC_SMALL
 //		int w_tax=1, d_tax=1;
 //		int64_t ol_amount = ol_quantity * i_price * (1 + w_tax + d_tax)
-//* (1 - c_discount); 		r_ol->set_value(OL_SUPPLY_W_ID, &ol_supply_w_id);
-//		r_ol->set_value(OL_QUANTITY, &ol_quantity);
+//* (1 - c_discount); 		r_ol->set_value(OL_SUPPLY_W_ID,
+//&ol_supply_w_id); 		r_ol->set_value(OL_QUANTITY, &ol_quantity);
 //		r_ol->set_value(OL_AMOUNT, &ol_amount);
 #endif
     //		insert_row(r_ol, _wl->t_orderline);

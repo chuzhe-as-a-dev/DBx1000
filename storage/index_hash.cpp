@@ -1,5 +1,6 @@
-#include "global.h"
 #include "index_hash.h"
+
+#include "global.h"
 #include "mem_alloc.h"
 #include "table.h"
 

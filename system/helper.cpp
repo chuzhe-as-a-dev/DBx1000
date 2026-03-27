@@ -1,5 +1,6 @@
-#include "global.h"
 #include "helper.h"
+
+#include "global.h"
 #include "mem_alloc.h"
 #include "time.h"
 

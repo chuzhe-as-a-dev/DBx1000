@@ -1,7 +1,7 @@
 #pragma once
 
-#include "helper.h"
 #include "global.h"
+#include "helper.h"
 
 class row_t;
 class txn_man;

@@ -1,20 +1,20 @@
+#include "catalog.h"
 #include "global.h"
 #include "helper.h"
-#include "ycsb.h"
-#include "ycsb_query.h"
-#include "wl.h"
-#include "thread.h"
-#include "table.h"
-#include "row.h"
-#include "index_hash.h"
 #include "index_btree.h"
-#include "catalog.h"
+#include "index_hash.h"
 #include "manager.h"
-#include "row_lock.h"
-#include "row_ts.h"
-#include "row_mvcc.h"
 #include "mem_alloc.h"
 #include "query.h"
+#include "row.h"
+#include "row_lock.h"
+#include "row_mvcc.h"
+#include "row_ts.h"
+#include "table.h"
+#include "thread.h"
+#include "wl.h"
+#include "ycsb.h"
+#include "ycsb_query.h"
 
 void ycsb_txn_man::init(thread_t* h_thd, workload* h_wl, uint64_t thd_id) {
   txn_man::init(h_thd, h_wl, thd_id);
@@ -66,7 +66,7 @@ RC ycsb_txn_man::run_txn(base_query* query) {
         } else {
           assert(req->rtype == WR);
           //					for (int fid = 0; fid <
-          //schema->get_field_cnt(); fid++) {
+          // schema->get_field_cnt(); fid++) {
           int fid = 0;
           char* data = row->get_data();
           *(uint64_t*)(&data[fid * 10]) = 0;

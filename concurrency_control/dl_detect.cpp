@@ -1,10 +1,11 @@
 #include "dl_detect.h"
+
 #include "global.h"
 #include "helper.h"
-#include "txn.h"
-#include "row.h"
 #include "manager.h"
 #include "mem_alloc.h"
+#include "row.h"
+#include "txn.h"
 
 /********************************************************/
 // The current txn aborts itself only if it holds less

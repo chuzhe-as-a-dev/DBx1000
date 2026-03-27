@@ -1,7 +1,8 @@
-#include "txn.h"
-#include "row.h"
 #include "row_occ.h"
+
 #include "mem_alloc.h"
+#include "row.h"
+#include "txn.h"
 
 void Row_occ::init(row_t* row) {
   _row = row;

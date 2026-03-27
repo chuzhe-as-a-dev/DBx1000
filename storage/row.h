@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+
 #include "global.h"
 
 #define DECL_SET_VALUE(type) void set_value(int col_id, type value);

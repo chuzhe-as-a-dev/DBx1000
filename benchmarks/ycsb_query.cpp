@@ -1,9 +1,10 @@
-#include "query.h"
 #include "ycsb_query.h"
+
 #include "mem_alloc.h"
+#include "query.h"
+#include "table.h"
 #include "wl.h"
 #include "ycsb.h"
-#include "table.h"
 
 uint64_t ycsb_query::the_n = 0;
 double ycsb_query::denom = 0;

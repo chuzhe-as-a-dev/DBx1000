@@ -1,11 +1,12 @@
 #include "global.h"
-#include "mem_alloc.h"
-#include "stats.h"
+
 #include "dl_detect.h"
 #include "manager.h"
-#include "query.h"
-#include "plock.h"
+#include "mem_alloc.h"
 #include "occ.h"
+#include "plock.h"
+#include "query.h"
+#include "stats.h"
 #include "vll.h"
 
 mem_alloc mem_allocator;

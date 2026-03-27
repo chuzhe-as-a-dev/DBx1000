@@ -1,6 +1,7 @@
+#include "plock.h"
+
 #include "global.h"
 #include "helper.h"
-#include "plock.h"
 #include "mem_alloc.h"
 #include "txn.h"
 

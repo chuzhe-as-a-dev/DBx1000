@@ -1,20 +1,21 @@
 #include <sched.h>
+
+#include "catalog.h"
 #include "global.h"
 #include "helper.h"
-#include "ycsb.h"
-#include "wl.h"
-#include "thread.h"
-#include "table.h"
-#include "row.h"
-#include "index_hash.h"
 #include "index_btree.h"
-#include "catalog.h"
+#include "index_hash.h"
 #include "manager.h"
-#include "row_lock.h"
-#include "row_ts.h"
-#include "row_mvcc.h"
 #include "mem_alloc.h"
 #include "query.h"
+#include "row.h"
+#include "row_lock.h"
+#include "row_mvcc.h"
+#include "row_ts.h"
+#include "table.h"
+#include "thread.h"
+#include "wl.h"
+#include "ycsb.h"
 
 int ycsb_wl::next_tid;
 

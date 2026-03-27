@@ -1,7 +1,8 @@
 #include "manager.h"
+
+#include "pthread.h"
 #include "row.h"
 #include "txn.h"
-#include "pthread.h"
 
 void Manager::init() {
   timestamp = (uint64_t*)_mm_malloc(sizeof(uint64_t), 64);
