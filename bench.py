@@ -32,19 +32,29 @@ CSV_FIELDS = [
     'algorithm', 'threads', 'run',
     'max_txn_per_part', 'warmup', 'warehouses', 'perc_remote_pay', 'perc_remote_neworder',
     # Output metrics
-    'txn_cnt', 'abort_cnt', 'run_time', 'throughput',
-    'time_man', 'time_index', 'time_cleanup', 'latency',
+    'txn_cnt', 'abort_cnt', 'sim_time', 'throughput',
+    'run_time', 'time_man', 'time_index', 'time_cleanup', 'latency',
     'time_wait', 'time_ts_alloc', 'time_abort', 'time_query',
 ]
 
-def parse_summary(output):
-    m = re.search(r'\[summary\]\s*(.*)', output)
-    if not m:
+def parse_output(output):
+    """Parse SimTime from PASS! line and fields from [summary] line."""
+    # SimTime (wall-clock nanoseconds)
+    sim_m = re.search(r'PASS!\s*SimTime\s*=\s*(\d+)', output)
+    if not sim_m:
+        return None
+    sim_time_ns = int(sim_m.group(1))
+
+    # Summary fields
+    sum_m = re.search(r'\[summary\]\s*(.*)', output)
+    if not sum_m:
         return None
     fields = {}
-    for pair in m.group(1).split(','):
+    for pair in sum_m.group(1).split(','):
         k, v = pair.strip().split('=')
         fields[k.strip()] = float(v.strip())
+
+    fields['sim_time'] = sim_time_ns / 1e9  # convert to seconds
     return fields
 
 def build(build_dir, max_txn, warmup, log):
@@ -102,7 +112,7 @@ def run_one(build_dir, alg, threads, warehouses, perc_remote_pay, perc_remote_ne
         log.write(f'  EXIT CODE {result.returncode}\n')
         return cmd, None
 
-    summary = parse_summary(result.stdout)
+    summary = parse_output(result.stdout)
     return cmd, summary
 
 def main():
@@ -201,7 +211,8 @@ def main():
                     log.flush()
                     continue
 
-                tput = summary['txn_cnt'] / summary['run_time'] if summary['run_time'] > 0 else 0
+                sim_time = summary['sim_time']
+                tput = summary['txn_cnt'] / sim_time if sim_time > 0 else 0
 
                 n_wh = threads if args.warehouses == 0 else args.warehouses
                 row = {
@@ -215,8 +226,9 @@ def main():
                     'perc_remote_neworder': args.perc_remote_neworder,
                     'txn_cnt': int(summary['txn_cnt']),
                     'abort_cnt': int(summary['abort_cnt']),
-                    'run_time': f'{summary["run_time"]:.6f}',
+                    'sim_time': f'{sim_time:.6f}',
                     'throughput': f'{tput:.0f}',
+                    'run_time': f'{summary["run_time"]:.6f}',
                     'time_man': f'{summary.get("time_man", 0):.6f}',
                     'time_index': f'{summary.get("time_index", 0):.6f}',
                     'time_cleanup': f'{summary.get("time_cleanup", 0):.6f}',

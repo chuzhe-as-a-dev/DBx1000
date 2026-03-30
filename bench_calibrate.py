@@ -13,15 +13,19 @@ Usage:
 
 import argparse, os, re, subprocess, sys, math
 
-def parse_summary(output):
-    """Parse the [summary] line from stdout."""
-    m = re.search(r'\[summary\]\s*(.*)', output)
-    if not m:
+def parse_output(output):
+    """Parse SimTime from PASS! line and fields from [summary] line."""
+    sim_m = re.search(r'PASS!\s*SimTime\s*=\s*(\d+)', output)
+    if not sim_m:
+        return None
+    sum_m = re.search(r'\[summary\]\s*(.*)', output)
+    if not sum_m:
         return None
     fields = {}
-    for pair in m.group(1).split(','):
+    for pair in sum_m.group(1).split(','):
         k, v = pair.strip().split('=')
         fields[k.strip()] = float(v.strip())
+    fields['sim_time'] = int(sim_m.group(1)) / 1e9  # wall-clock seconds
     return fields
 
 def build(build_dir, max_txn, warmup):
@@ -53,7 +57,7 @@ def run_one(build_dir, alg, threads, extra_flags=''):
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
         return None
-    return parse_summary(result.stdout)
+    return parse_output(result.stdout)
 
 def main():
     parser = argparse.ArgumentParser(description='Calibrate benchmark duration')
@@ -71,7 +75,7 @@ def main():
     print(f'algorithm: {args.alg}, threads: {args.threads}, '
           f'warmup: {args.warmup}, runs: {args.runs}')
     print()
-    print(f'{"max_txn":>10} {"run":>4} {"txn_cnt":>10} {"run_time":>10} '
+    print(f'{"max_txn":>10} {"run":>4} {"txn_cnt":>10} {"sim_time":>10} '
           f'{"throughput":>12} {"abort_cnt":>10}')
     print('-' * 62)
 
@@ -88,10 +92,10 @@ def main():
             if summary is None:
                 print(f'{max_txn:>10} {run+1:>4}   TIMEOUT/ERROR')
                 continue
-            tput = summary['txn_cnt'] / summary['run_time'] if summary['run_time'] > 0 else 0
+            tput = summary['txn_cnt'] / summary['sim_time'] if summary['sim_time'] > 0 else 0
             results[max_txn].append(tput)
             print(f'{max_txn:>10} {run+1:>4} {summary["txn_cnt"]:>10.0f} '
-                  f'{summary["run_time"]:>10.4f} {tput:>12.0f} '
+                  f'{summary["sim_time"]:>10.4f} {tput:>12.0f} '
                   f'{summary["abort_cnt"]:>10.0f}')
 
     # Summary table
