@@ -16,9 +16,7 @@ Manager* glob_manager;
 Query_queue* query_queue;
 Plock part_lock_man;
 OptCC occ_man;
-#if CC_ALG == VLL
 VLLMan vll_man;
-#endif
 
 bool volatile warmup_finish = false;
 bool volatile enable_thread_mem_pool = false;
@@ -64,10 +62,5 @@ char* output_file = NULL;
 
 std::map<std::string, std::string> g_params;
 
-#if TPCC_SMALL
-UInt32 g_max_items = 10000;
-UInt32 g_cust_per_dist = 2000;
-#else
-UInt32 g_max_items = 100000;
-UInt32 g_cust_per_dist = 3000;
-#endif
+UInt32 g_max_items = tpcc_small ? 10000 : 100000;
+UInt32 g_cust_per_dist = tpcc_small ? 2000 : 3000;

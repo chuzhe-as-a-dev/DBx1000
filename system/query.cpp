@@ -26,11 +26,11 @@ void Query_queue::init(workload* h_wl) {
   _wl = h_wl;
   _next_tid = 0;
 
-#if WORKLOAD == YCSB
-  ycsb_query::calculateDenom();
-#elif WORKLOAD == TPCC
-  assert(tpcc_buffer != NULL);
-#endif
+  if constexpr (wl == WL::Ycsb) {
+    ycsb_query::calculateDenom();
+  } else if constexpr (wl == WL::Tpcc) {
+    assert(tpcc_buffer != NULL);
+  }
   int64_t begin = get_server_clock();
   pthread_t p_thds[g_thread_cnt - 1];
   for (UInt32 i = 0; i < g_thread_cnt - 1; i++) {
@@ -69,28 +69,34 @@ void* Query_queue::threadInitQuery(void* This) {
 //               be re-queued without wrapping around the array end.
 //               (AI-generated)
 void Query_thd::init(workload* h_wl, int thread_id) {
-  uint64_t request_cnt;
   q_idx = 0;
-  request_cnt = WARMUP / g_thread_cnt + MAX_TXN_PER_PART + 4;
-#if ABORT_BUFFER_ENABLE
-  request_cnt += ABORT_BUFFER_SIZE;
-#endif
-#if WORKLOAD == YCSB
-  queries = (ycsb_query*)mem_allocator.alloc(sizeof(ycsb_query) * request_cnt,
-                                             thread_id);
-  srand48_r(thread_id + 1, &buffer);
-#elif WORKLOAD == TPCC
-  queries = (tpcc_query*)_mm_malloc(sizeof(tpcc_query) * request_cnt, 64);
-#endif
-  for (UInt32 qid = 0; qid < request_cnt; qid++) {
-#if WORKLOAD == YCSB
-    new (&queries[qid]) ycsb_query();
-    queries[qid].init(thread_id, h_wl, this);
-#elif WORKLOAD == TPCC
-    new (&queries[qid]) tpcc_query();
-    queries[qid].init(thread_id, h_wl);
-#endif
-  }
+
+  [&]<WL W = wl>() {
+    if constexpr (W == WL::Ycsb || W == WL::Tpcc) {
+      uint64_t request_cnt;
+      request_cnt = WARMUP / g_thread_cnt + MAX_TXN_PER_PART + 4;
+      if constexpr (abort_buffer_enable) {
+        request_cnt += ABORT_BUFFER_SIZE;
+      }
+      using QT = std::conditional_t<W == WL::Ycsb, ycsb_query, tpcc_query>;
+      QT* q;
+      if constexpr (W == WL::Ycsb) {
+        q = (QT*)mem_allocator.alloc(sizeof(QT) * request_cnt, thread_id);
+        srand48_r(thread_id + 1, &buffer);
+      } else {
+        q = (QT*)_mm_malloc(sizeof(QT) * request_cnt, 64);
+      }
+      queries = reinterpret_cast<QueryType*>(q);
+      for (UInt32 qid = 0; qid < request_cnt; qid++) {
+        new (&q[qid]) QT();
+        if constexpr (W == WL::Ycsb) {
+          q[qid].init(thread_id, h_wl, this);
+        } else {
+          q[qid].init(thread_id, h_wl);
+        }
+      }
+    }
+  }();
 }
 
 base_query* Query_thd::get_next_query() {

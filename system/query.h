@@ -1,5 +1,7 @@
 #pragma once
 
+#include <type_traits>
+
 #include "global.h"
 #include "helper.h"
 
@@ -21,11 +23,8 @@ class Query_thd {
   void init(workload* h_wl, int thread_id);
   base_query* get_next_query();
   int q_idx;
-#if WORKLOAD == YCSB
-  ycsb_query* queries;
-#else
-  tpcc_query* queries;
-#endif
+  using QueryType = std::conditional_t<wl == WL::Ycsb, ycsb_query, tpcc_query>;
+  QueryType* queries;
   char pad[CL_SIZE - sizeof(void*) - sizeof(int)];
   drand48_data buffer;
 };

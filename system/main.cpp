@@ -25,22 +25,19 @@ int main(int argc, char* argv[]) {
   stats.init();
   glob_manager = (Manager*)_mm_malloc(sizeof(Manager), 64);
   glob_manager->init();
-  if (g_cc_alg == DL_DETECT) dl_detector.init();
+  if constexpr (cc_alg == CCAlg::DlDetect) dl_detector.init();
   printf("mem_allocator initialized!\n");
   workload* m_wl;
-  switch (WORKLOAD) {
-    case YCSB:
-      m_wl = new ycsb_wl;
-      break;
-    case TPCC:
-      m_wl = new tpcc_wl;
-      break;
-    case TEST:
-      m_wl = new TestWorkload;
-      ((TestWorkload*)m_wl)->tick();
-      break;
-    default:
-      assert(false);
+  if constexpr (wl == WL::Ycsb) {
+    m_wl = new ycsb_wl;
+  } else if constexpr (wl == WL::Tpcc) {
+    m_wl = new tpcc_wl;
+  } else if constexpr (wl == WL::Test) {
+    m_wl = new TestWorkload;
+    ((TestWorkload*)m_wl)->tick();
+  } else {
+    assert(false);
+    m_wl = nullptr;
   }
   m_wl->init();
   printf("workload initialized!\n");
@@ -53,18 +50,18 @@ int main(int argc, char* argv[]) {
   // query_queue should be the last one to be initialized!!!
   // because it collects txn latency
   query_queue = (Query_queue*)_mm_malloc(sizeof(Query_queue), 64);
-  if (WORKLOAD != TEST) query_queue->init(m_wl);
+  if constexpr (wl != WL::Test) query_queue->init(m_wl);
   pthread_barrier_init(&warmup_bar, NULL, g_thread_cnt);
   printf("query_queue initialized!\n");
-#if CC_ALG == HSTORE
-  part_lock_man.init();
-#elif CC_ALG == OCC
-  occ_man.init();
-#elif CC_ALG == VLL
-  vll_man.init();
-#elif CC_ALG == PER_OP
-  cc_global_init();
-#endif
+  if constexpr (cc_alg == CCAlg::Hstore) {
+    part_lock_man.init();
+  } else if constexpr (cc_alg == CCAlg::Occ) {
+    occ_man.init();
+  } else if constexpr (cc_alg == CCAlg::Vll) {
+    vll_man.init();
+  } else if constexpr (cc_alg == CCAlg::PerOp) {
+    cc_global_init();
+  }
 
   for (uint32_t i = 0; i < thd_cnt; i++) g_threads[i]->init(i, m_wl);
 
@@ -91,9 +88,9 @@ int main(int argc, char* argv[]) {
   for (uint32_t i = 0; i < thd_cnt - 1; i++) pthread_join(p_thds[i], NULL);
   int64_t endtime = get_server_clock();
 
-  if (WORKLOAD != TEST) {
+  if constexpr (wl != WL::Test) {
     printf("PASS! SimTime = %ld\n", endtime - starttime);
-    if (STATS_ENABLE) stats.print();
+    if constexpr (stats_enable) stats.print();
   } else {
     ((TestWorkload*)m_wl)->summarize();
   }

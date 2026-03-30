@@ -6,7 +6,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -98,7 +98,6 @@ foreach(alg IN LISTS DBX_ALGS)
         add_executable(${target}
             $<TARGET_OBJECTS:config_common>
             $<TARGET_OBJECTS:benchmarks_common>
-            $<TARGET_OBJECTS:cc_common>
             $<TARGET_OBJECTS:storage_common>
             $<TARGET_OBJECTS:system_common>
             ${cc_objs}
@@ -123,7 +122,6 @@ foreach(variant IN LISTS DBX_PER_OP_VARIANTS)
         add_executable(${target}
             $<TARGET_OBJECTS:config_common>
             $<TARGET_OBJECTS:benchmarks_common>
-            $<TARGET_OBJECTS:cc_common>
             $<TARGET_OBJECTS:storage_common>
             $<TARGET_OBJECTS:system_common>
             $<TARGET_OBJECTS:cc_per_op_${var_lower}>

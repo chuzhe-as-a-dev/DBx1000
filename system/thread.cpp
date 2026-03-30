@@ -83,7 +83,7 @@ RC thread_t::run() {
 
   while (true) {
     ts_t starttime = get_sys_clock();
-    if (WORKLOAD != TEST) {
+    if constexpr (wl != WL::Test) {
       int trial = 0;
       if (_abort_buffer_enable) {
         m_query = NULL;
@@ -111,9 +111,9 @@ RC thread_t::run() {
             usleep((min_ready_time - curr_time) / 1000);
           } else if (m_query == NULL) {
             m_query = query_queue->get_next_query(_thd_id);
-#if CC_ALG == WAIT_DIE
-            m_txn->set_ts(get_next_ts());
-#endif
+            if constexpr (cc_alg == CCAlg::WaitDie) {
+              m_txn->set_ts(get_next_ts());
+            }
           }
           if (m_query != NULL) break;
         }
@@ -129,49 +129,56 @@ RC thread_t::run() {
     m_txn->set_txn_id(get_thd_id() + thd_txn_id * g_thread_cnt);
     thd_txn_id++;
 
-    if ((CC_ALG == HSTORE && !HSTORE_LOCAL_TS) || CC_ALG == MVCC ||
-        CC_ALG == HEKATON || CC_ALG == TIMESTAMP)
+    if constexpr ((cc_alg == CCAlg::Hstore && !HSTORE_LOCAL_TS) ||
+                  cc_alg == CCAlg::Mvcc || cc_alg == CCAlg::Hekaton ||
+                  cc_alg == CCAlg::Timestamp)
       m_txn->set_ts(get_next_ts());
 
     rc = RCOK;
-#if CC_ALG == HSTORE
-    if (WORKLOAD == TEST) {
-      uint64_t part_to_access[1] = {0};
-      rc = part_lock_man.lock(m_txn, &part_to_access[0], 1);
-    } else
-      rc =
-          part_lock_man.lock(m_txn, m_query->part_to_access, m_query->part_num);
-#elif CC_ALG == VLL
-    vll_man.vllMainLoop(m_txn, m_query);
-#elif CC_ALG == MVCC || CC_ALG == HEKATON
-    glob_manager->add_ts(get_thd_id(), m_txn->get_ts());
-#elif CC_ALG == OCC
-    // In the original OCC paper, start_ts only reads the current ts without
-    // advancing it. But we advance the global ts here to simplify the
-    // implementation. However, the final results should be the same.
-    m_txn->start_ts = get_next_ts();
-#endif
-    if (rc == RCOK) {
-#if CC_ALG != VLL
-      if (WORKLOAD == TEST)
-        rc = runTest(m_txn);
-      else {
-#if CC_ALG == PER_OP
-        cc_pre_txn(this, m_txn, m_query);
-#endif
-        rc = m_txn->run_txn(m_query);
-#if CC_ALG == PER_OP
-        cc_post_txn(this, m_txn, rc);
-#endif
-      }
-#endif
-#if CC_ALG == HSTORE
-      if (WORKLOAD == TEST) {
+    if constexpr (cc_alg == CCAlg::Hstore) {
+      if constexpr (wl == WL::Test) {
         uint64_t part_to_access[1] = {0};
-        part_lock_man.unlock(m_txn, &part_to_access[0], 1);
-      } else
-        part_lock_man.unlock(m_txn, m_query->part_to_access, m_query->part_num);
-#endif
+        rc = part_lock_man.lock(m_txn, &part_to_access[0], 1);
+      } else {
+        rc = part_lock_man.lock(m_txn, m_query->part_to_access,
+                                m_query->part_num);
+      }
+    } else if constexpr (cc_alg == CCAlg::Vll) {
+      vll_man.vllMainLoop(m_txn, m_query);
+    } else if constexpr (cc_alg == CCAlg::Mvcc || cc_alg == CCAlg::Hekaton) {
+      glob_manager->add_ts(get_thd_id(), m_txn->get_ts());
+    }
+    [&]<CCAlg A = cc_alg>() {
+      if constexpr (A == CCAlg::Occ) {
+        // In the original OCC paper, start_ts only reads the current ts without
+        // advancing it. But we advance the global ts here to simplify the
+        // implementation. However, the final results should be the same.
+        static_cast<TxnExtra<A>&>(*m_txn).start_ts = get_next_ts();
+      }
+    }();
+    if (rc == RCOK) {
+      if constexpr (cc_alg != CCAlg::Vll) {
+        if constexpr (wl == WL::Test) {
+          rc = runTest(m_txn);
+        } else {
+          if constexpr (cc_alg == CCAlg::PerOp) {
+            cc_pre_txn(this, m_txn, m_query);
+          }
+          rc = m_txn->run_txn(m_query);
+          if constexpr (cc_alg == CCAlg::PerOp) {
+            cc_post_txn(this, m_txn, rc);
+          }
+        }
+      }
+      if constexpr (cc_alg == CCAlg::Hstore) {
+        if constexpr (wl == WL::Test) {
+          uint64_t part_to_access[1] = {0};
+          part_lock_man.unlock(m_txn, &part_to_access[0], 1);
+        } else {
+          part_lock_man.unlock(m_txn, m_query->part_to_access,
+                               m_query->part_num);
+        }
+      }
     }
     if (rc == Abort) {
       uint64_t penalty = 0;
@@ -180,7 +187,7 @@ RC thread_t::run() {
         drand48_r(&buffer, &r);
         penalty = r * ABORT_PENALTY;
       }
-      if (!_abort_buffer_enable || WORKLOAD == TEST)
+      if (!_abort_buffer_enable || wl == WL::Test)
         usleep(penalty / 1000);
       else {
         assert(_abort_buffer_empty_slots > 0);
@@ -248,33 +255,37 @@ ts_t thread_t::get_next_ts() {
 }
 
 RC thread_t::runTest(txn_man* txn) {
-#if WORKLOAD == TEST
-  RC rc = RCOK;
-  if (g_test_case == READ_WRITE) {
-    rc = ((TestTxnMan*)txn)->run_txn(g_test_case, 0);
-    // Refresh the transaction's timestamp before the second run so that
-    // timestamp-based CC algorithms (HEKATON, MVCC, TIMESTAMP) do not
-    // reject the read as stale after the write transaction committed.
-#if CC_ALG == OCC
-    txn->start_ts = get_next_ts();
-#elif CC_ALG == HEKATON || CC_ALG == MVCC || CC_ALG == TIMESTAMP
-    txn->set_ts(get_next_ts());
-    glob_manager->add_ts(get_thd_id(), txn->get_ts());
-#endif
-    rc = ((TestTxnMan*)txn)->run_txn(g_test_case, 1);
-    printf("READ_WRITE TEST PASSED\n");
-    return FINISH;
-  } else if (g_test_case == CONFLICT) {
-    rc = ((TestTxnMan*)txn)->run_txn(g_test_case, 0);
-    if (rc == RCOK)
+  if constexpr (wl == WL::Test) {
+    RC rc = RCOK;
+    if (g_test_case == READ_WRITE) {
+      rc = ((TestTxnMan*)txn)->run_txn(g_test_case, 0);
+      // Refresh the transaction's timestamp before the second run so that
+      // timestamp-based CC algorithms (HEKATON, MVCC, TIMESTAMP) do not
+      // reject the read as stale after the write transaction committed.
+      [&]<CCAlg A = cc_alg>() {
+        if constexpr (A == CCAlg::Occ) {
+          static_cast<TxnExtra<A>&>(*txn).start_ts = get_next_ts();
+        }
+      }();
+      if constexpr (cc_alg == CCAlg::Hekaton || cc_alg == CCAlg::Mvcc ||
+                    cc_alg == CCAlg::Timestamp) {
+        txn->set_ts(get_next_ts());
+        glob_manager->add_ts(get_thd_id(), txn->get_ts());
+      }
+      rc = ((TestTxnMan*)txn)->run_txn(g_test_case, 1);
+      printf("READ_WRITE TEST PASSED\n");
       return FINISH;
-    else
-      return rc;
+    } else if (g_test_case == CONFLICT) {
+      rc = ((TestTxnMan*)txn)->run_txn(g_test_case, 0);
+      if (rc == RCOK)
+        return FINISH;
+      else
+        return rc;
+    }
+    assert(false);
+    return RCOK;
+  } else {
+    assert(false);
+    return RCOK;
   }
-  assert(false);
-  return RCOK;
-#else
-  assert(false);
-  return RCOK;
-#endif
 }

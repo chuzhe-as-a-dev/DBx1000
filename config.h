@@ -213,3 +213,39 @@ extern TestCases g_test_case;
 #define TS_CAS 2
 #define TS_HW 3
 #define TS_CLOCK 4
+
+/***********************************************/
+// Typed constexpr equivalents of the above macros.
+// CamelCase names avoid clashing with the existing #define constants.
+/***********************************************/
+enum class CCAlg : int {
+  NoWait = 1,
+  WaitDie = 2,
+  DlDetect = 3,
+  Timestamp = 4,
+  Mvcc = 5,
+  Hstore = 6,
+  Occ = 7,
+  Tictoc = 8,
+  Silo = 9,
+  Vll = 10,
+  Hekaton = 11,
+  PerOp = 12
+};
+enum class WL : int { Ycsb = 1, Tpcc = 2, Test = 3 };
+enum class IsoLevel : int {
+  Serializable = 1,
+  Snapshot = 2,
+  RepeatableRead = 3
+};
+
+inline constexpr CCAlg cc_alg = static_cast<CCAlg>(CC_ALG);
+inline constexpr WL wl = static_cast<WL>(WORKLOAD);
+inline constexpr IsoLevel iso_level = static_cast<IsoLevel>(ISOLATION_LEVEL);
+
+// Boolean config knobs used in control flow.
+inline constexpr bool roll_back = ROLL_BACK;
+inline constexpr bool abort_buffer_enable = ABORT_BUFFER_ENABLE;
+inline constexpr bool tpcc_small = TPCC_SMALL;
+inline constexpr bool stats_enable = STATS_ENABLE;
+inline constexpr bool time_enable = TIME_ENABLE;

@@ -17,25 +17,95 @@ class INDEX;
 // For VLL
 enum TxnType { VLL_Blocked, VLL_Free };
 
-class Access {
+// Per-access algorithm-specific fields via template specialization.
+template <CCAlg>
+struct AccessExtra {};
+template <>
+struct AccessExtra<CCAlg::Tictoc> {
+  ts_t wts;
+  ts_t rts;
+};
+template <>
+struct AccessExtra<CCAlg::Silo> {
+  ts_t tid;
+  ts_t epoch;
+};
+template <>
+struct AccessExtra<CCAlg::Hekaton> {
+  void* history_entry;
+};
+
+class Access : public AccessExtra<cc_alg> {
  public:
   access_t type;
   row_t* orig_row;
   row_t* data;
   row_t* orig_data;
   void cleanup();
-#if CC_ALG == TICTOC
-  ts_t wts;
-  ts_t rts;
-#elif CC_ALG == SILO
-  ts_t tid;
-  ts_t epoch;
-#elif CC_ALG == HEKATON
-  void* history_entry;
-#endif
 };
 
-class txn_man {
+// Per-transaction algorithm-specific fields via template specialization.
+template <CCAlg>
+struct TxnExtra {};
+template <>
+struct TxnExtra<CCAlg::DlDetect> {
+  bool volatile lock_ready = false;
+  bool volatile lock_abort = false;
+};
+template <>
+struct TxnExtra<CCAlg::NoWait> {
+  bool volatile lock_ready = false;
+  bool volatile lock_abort = false;
+};
+template <>
+struct TxnExtra<CCAlg::WaitDie> {
+  bool volatile lock_ready = false;
+  bool volatile lock_abort = false;
+};
+template <>
+struct TxnExtra<CCAlg::Timestamp> {
+  bool volatile ts_ready = false;
+};
+template <>
+struct TxnExtra<CCAlg::Mvcc> {
+  bool volatile ts_ready = false;
+};
+template <>
+struct TxnExtra<CCAlg::Hstore> {
+  int volatile ready_part = 0;
+};
+template <>
+struct TxnExtra<CCAlg::Occ> {
+  uint64_t start_ts;
+  uint64_t end_ts;
+};
+template <>
+struct TxnExtra<CCAlg::Hekaton> {
+  void* volatile history_entry = nullptr;
+};
+template <>
+struct TxnExtra<CCAlg::Tictoc> {
+  ts_t _max_wts;
+  bool _atomic_timestamp;
+  bool _pre_abort;
+  bool _validation_no_wait;
+  bool _write_copy_ptr;
+  ts_t last_wts;
+  ts_t last_rts;
+};
+template <>
+struct TxnExtra<CCAlg::Silo> {
+  ts_t _cur_tid;
+  bool _pre_abort;
+  bool _validation_no_wait;
+  ts_t last_tid;
+};
+template <>
+struct TxnExtra<CCAlg::Vll> {
+  TxnType vll_txn_type;
+};
+
+class txn_man : public TxnExtra<cc_alg> {
  public:
   virtual void init(thread_t* h_thd, workload* h_wl, uint64_t part_id);
   void release();
@@ -55,31 +125,13 @@ class txn_man {
 
   pthread_mutex_t txn_lock;
   row_t* volatile cur_row;
-#if CC_ALG == HEKATON
-  void* volatile history_entry;
-#endif
-  // [DL_DETECT, NO_WAIT, WAIT_DIE]
-  bool volatile lock_ready;
-  bool volatile lock_abort;  // forces another waiting txn to abort.
-  // [TIMESTAMP, MVCC]
-  bool volatile ts_ready;
-  // [HSTORE]
-  int volatile ready_part;
   RC finish(RC rc);
   void cleanup(RC rc);
 #if CC_ALG == TICTOC
   ts_t get_max_wts() { return _max_wts; }
   void update_max_wts(ts_t max_wts);
-  ts_t last_wts;
-  ts_t last_rts;
-#elif CC_ALG == SILO
-  ts_t last_tid;
 #endif
 
-  // For OCC
-  uint64_t start_ts;
-  uint64_t end_ts;
-  // following are public for OCC
   int row_cnt;
 #if CC_ALG == PER_OP
   void* cc_txn_state;  // LLM-managed per-transaction CC state
@@ -88,11 +140,15 @@ class txn_man {
   Access** accesses;
   int num_accesses_alloc;
 
-  // For VLL
-  TxnType vll_txn_type;
   itemid_t* index_read(INDEX* index, idx_key_t key, int part_id);
   void index_read(INDEX* index, idx_key_t key, int part_id, itemid_t*& item);
   row_t* get_row(row_t* row, access_t type, int op_idx = -1);
+
+  // Validation methods — declared unconditionally; defined only in the
+  // corresponding CC algorithm's .cpp file.
+  RC validate_tictoc();
+  RC validate_silo();
+  RC validate_hekaton(RC rc);
 
  protected:
   void insert_row(row_t* row, table_t* table);
@@ -103,21 +159,4 @@ class txn_man {
   row_t* insert_rows[MAX_ROW_PER_TXN];
   txnid_t txn_id;
   ts_t timestamp;
-
-  bool _write_copy_ptr;
-#if CC_ALG == TICTOC || CC_ALG == SILO
-  bool _pre_abort;
-  bool _validation_no_wait;
-#endif
-#if CC_ALG == TICTOC
-  bool _atomic_timestamp;
-  ts_t _max_wts;
-  // the following methods are defined in concurrency_control/tictoc.cpp
-  RC validate_tictoc();
-#elif CC_ALG == SILO
-  ts_t _cur_tid;
-  RC validate_silo();
-#elif CC_ALG == HEKATON
-  RC validate_hekaton(RC rc);
-#endif
 };

@@ -40,7 +40,7 @@ void Stats_tmp::clear() {
 }
 
 void Stats::init() {
-  if (!STATS_ENABLE) return;
+  if constexpr (!stats_enable) return;
   _stats = (Stats_thd**)_mm_malloc(sizeof(Stats_thd*) * g_thread_cnt, 64);
   tmp_stats = (Stats_tmp**)_mm_malloc(sizeof(Stats_tmp*) * g_thread_cnt, 64);
   dl_detect_time = 0;
@@ -50,7 +50,7 @@ void Stats::init() {
 }
 
 void Stats::init(uint64_t thread_id) {
-  if (!STATS_ENABLE) return;
+  if constexpr (!stats_enable) return;
   _stats[thread_id] = (Stats_thd*)_mm_malloc(sizeof(Stats_thd), 64);
   tmp_stats[thread_id] = (Stats_tmp*)_mm_malloc(sizeof(Stats_tmp), 64);
 
@@ -59,7 +59,7 @@ void Stats::init(uint64_t thread_id) {
 }
 
 void Stats::clear(uint64_t tid) {
-  if (STATS_ENABLE) {
+  if constexpr (stats_enable) {
     _stats[tid]->clear();
     tmp_stats[tid]->clear();
 
@@ -81,7 +81,7 @@ void Stats::add_debug(uint64_t thd_id, uint64_t value, uint32_t select) {
 }
 
 void Stats::commit(uint64_t thd_id) {
-  if (STATS_ENABLE) {
+  if constexpr (stats_enable) {
     _stats[thd_id]->time_man += tmp_stats[thd_id]->time_man;
     _stats[thd_id]->time_index += tmp_stats[thd_id]->time_index;
     _stats[thd_id]->time_wait += tmp_stats[thd_id]->time_wait;
@@ -90,7 +90,7 @@ void Stats::commit(uint64_t thd_id) {
 }
 
 void Stats::abort(uint64_t thd_id) {
-  if (STATS_ENABLE) tmp_stats[thd_id]->init();
+  if constexpr (stats_enable) tmp_stats[thd_id]->init();
 }
 
 void Stats::print() {

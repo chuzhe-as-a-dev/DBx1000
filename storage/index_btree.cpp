@@ -113,7 +113,7 @@ RC index_btree::index_read(idx_key_t key, itemid_t*& item, uint64_t thd_id,
 // insert/split completes. (AI-generated)
 RC index_btree::index_insert(idx_key_t key, itemid_t* item, int part_id) {
   glob_param params;
-  if (WORKLOAD == TPCC) assert(part_id != -1);
+  if constexpr (wl == WL::Tpcc) assert(part_id != -1);
   assert(part_id != -1);
   params.part_id = part_id;
   // create a tree if there does not exist one already

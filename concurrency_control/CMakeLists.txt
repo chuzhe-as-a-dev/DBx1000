@@ -1,10 +1,4 @@
-# Macro-independent (compiled once)
-add_library(cc_common OBJECT
-    dl_detect.cpp plock.cpp row_occ.cpp row_ts.cpp row_vll.cpp
-)
-target_link_libraries(cc_common PRIVATE dbx_includes)
-
-# Per-algorithm CC objects
+# Per-algorithm CC objects — each file compiled only for matching CC_ALG.
 foreach(alg IN LISTS DBX_ALGS)
     set(_srcs)
 
@@ -17,9 +11,15 @@ foreach(alg IN LISTS DBX_ALGS)
     elseif(alg STREQUAL "MVCC")
         list(APPEND _srcs row_mvcc.cpp)
     elseif(alg STREQUAL "VLL")
-        list(APPEND _srcs vll.cpp)
+        list(APPEND _srcs vll.cpp row_vll.cpp)
     elseif(alg STREQUAL "OCC")
-        list(APPEND _srcs occ.cpp)
+        list(APPEND _srcs occ.cpp row_occ.cpp)
+    elseif(alg STREQUAL "TIMESTAMP")
+        list(APPEND _srcs row_ts.cpp)
+    elseif(alg STREQUAL "HSTORE")
+        list(APPEND _srcs plock.cpp)
+    elseif(alg STREQUAL "DL_DETECT")
+        list(APPEND _srcs dl_detect.cpp)
     endif()
 
     if(alg STREQUAL "NO_WAIT" OR alg STREQUAL "WAIT_DIE" OR alg STREQUAL "DL_DETECT")

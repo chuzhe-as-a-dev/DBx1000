@@ -72,9 +72,9 @@ uint64_t ycsb_query::zipf(uint64_t n, double theta) {
 // If g_key_order, requests are bubble-sorted by key (reduces lock ordering
 //   issues for some CC algorithms). (AI-generated)
 void ycsb_query::gen_requests(uint64_t thd_id, workload* h_wl) {
-#if CC_ALG == HSTORE
-  assert(g_virtual_part_cnt == g_part_cnt);
-#endif
+  if constexpr (cc_alg == CCAlg::Hstore) {
+    assert(g_virtual_part_cnt == g_part_cnt);
+  }
   int access_cnt = 0;
   std::set<uint64_t> all_keys;
   part_num = 0;

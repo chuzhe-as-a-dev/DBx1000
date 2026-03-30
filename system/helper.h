@@ -114,13 +114,13 @@
 // STATS helper
 /************************************************/
 #define INC_STATS(tid, name, value) \
-  if (STATS_ENABLE) stats._stats[tid]->name += value;
+  if constexpr (stats_enable) stats._stats[tid]->name += value;
 
 #define INC_TMP_STATS(tid, name, value) \
-  if (STATS_ENABLE) stats.tmp_stats[tid]->name += value;
+  if constexpr (stats_enable) stats.tmp_stats[tid]->name += value;
 
 #define INC_GLOB_STATS(name, value) \
-  if (STATS_ENABLE) stats.name += value;
+  if constexpr (stats_enable) stats.name += value;
 
 /************************************************/
 // malloc helper
@@ -205,11 +205,10 @@ inline uint64_t get_server_clock() {
 }
 
 inline uint64_t get_sys_clock() {
-#if TIME_ENABLE
-  return get_server_clock();
-#else
-  return 0;
-#endif
+  if constexpr (time_enable)
+    return get_server_clock();
+  else
+    return 0;
 }
 class myrand {
  public:

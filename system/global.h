@@ -19,6 +19,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <typeinfo>
 #include <vector>
 
@@ -53,9 +54,7 @@ extern Manager* glob_manager;
 extern Query_queue* query_queue;
 extern Plock part_lock_man;
 extern OptCC occ_man;
-#if CC_ALG == VLL
 extern VLLMan vll_man;
-#endif
 
 extern bool volatile warmup_finish;
 extern bool volatile enable_thread_mem_pool;
@@ -136,6 +135,8 @@ enum TsType { R_REQ, W_REQ, P_REQ, XP_REQ };
 // principal index structure. The workload may decide to use a different
 // index structure for specific purposes. (e.g. non-primary key access should
 // use hash)
+class index_btree;
+class IndexHash;
 #if (INDEX_STRUCT == IDX_BTREE)
 #define INDEX index_btree
 #else  // IDX_HASH
