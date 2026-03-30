@@ -58,6 +58,8 @@ UInt32 g_init_parallelism = INIT_PARALLELISM;
 UInt32 g_num_wh = NUM_WH;
 double g_perc_payment = PERC_PAYMENT;
 bool g_wh_update = WH_UPDATE;
+double g_perc_remote_pay = 15;          // TPC-C spec: 15%
+double g_perc_remote_neworder = 1;      // TPC-C spec: 1%
 char* output_file = NULL;
 
 std::map<std::string, std::string> g_params;

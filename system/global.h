@@ -99,6 +99,8 @@ extern UInt32 g_init_parallelism;
 extern UInt32 g_num_wh;
 extern double g_perc_payment;
 extern bool g_wh_update;
+extern double g_perc_remote_pay;       // % payments with remote customer (0–100)
+extern double g_perc_remote_neworder;  // % new-order lines from remote warehouse (0–100)
 extern char* output_file;
 extern UInt32 g_max_items;
 extern UInt32 g_cust_per_dist;

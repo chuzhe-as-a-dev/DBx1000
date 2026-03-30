@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cc_hooks.h"
 #include "global.h"
 #include "helper.h"
 
@@ -80,6 +81,9 @@ class txn_man {
   uint64_t end_ts;
   // following are public for OCC
   int row_cnt;
+#if CC_ALG == PER_OP
+  void* cc_txn_state;  // LLM-managed per-transaction CC state
+#endif
   int wr_cnt;
   Access** accesses;
   int num_accesses_alloc;
@@ -88,7 +92,7 @@ class txn_man {
   TxnType vll_txn_type;
   itemid_t* index_read(INDEX* index, idx_key_t key, int part_id);
   void index_read(INDEX* index, idx_key_t key, int part_id, itemid_t*& item);
-  row_t* get_row(row_t* row, access_t type);
+  row_t* get_row(row_t* row, access_t type, int op_idx = -1);
 
  protected:
   void insert_row(row_t* row, table_t* table);

@@ -1,6 +1,7 @@
 #include "txn.h"
 
 #include "catalog.h"
+#include "cc_hooks.h"
 #include "index_btree.h"
 #include "index_hash.h"
 #include "mem_alloc.h"
@@ -91,9 +92,9 @@ void txn_man::cleanup(RC rc) {
 
     if (ROLL_BACK && type == XP &&
         (CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE)) {
-      orig_r->return_row(type, this, accesses[rid]->orig_data);
+      orig_r->return_row(type, this, accesses[rid]->orig_data, rid);
     } else {
-      orig_r->return_row(type, this, accesses[rid]->data);
+      orig_r->return_row(type, this, accesses[rid]->data, rid);
     }
 #if CC_ALG != TICTOC && CC_ALG != SILO
     accesses[rid]->data = NULL;
@@ -104,8 +105,8 @@ void txn_man::cleanup(RC rc) {
     for (UInt32 i = 0; i < insert_cnt; i++) {
       row_t* row = insert_rows[i];
       assert(g_part_alloc == false);
-#if CC_ALG != HSTORE && CC_ALG != OCC
-      mem_allocator.free(row->manager, 0);
+#if CC_ALG != HSTORE && CC_ALG != OCC && CC_ALG != PER_OP
+      mem_allocator.free(row->cc_row_state, 0);
 #endif
       row->free_row();
       mem_allocator.free(row, sizeof(row_t));
@@ -132,7 +133,7 @@ void txn_man::cleanup(RC rc) {
 // Under REPEATABLE_READ for NO_WAIT/DL_DETECT, read locks are released
 // immediately after acquisition (lock-then-release), so the row manager is
 // notified here rather than in cleanup(). (AI-generated)
-row_t* txn_man::get_row(row_t* row, access_t type) {
+row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
   if (CC_ALG == HSTORE) return row;
   uint64_t starttime = get_sys_clock();
   RC rc = RCOK;
@@ -151,7 +152,7 @@ row_t* txn_man::get_row(row_t* row, access_t type) {
     num_accesses_alloc++;
   }
 
-  rc = row->get_row(type, this, accesses[row_cnt]->data);
+  rc = row->get_row(type, this, accesses[row_cnt]->data, op_idx);
 
   if (rc == Abort) {
     return NULL;
@@ -178,6 +179,10 @@ row_t* txn_man::get_row(row_t* row, access_t type) {
 #if (CC_ALG == NO_WAIT || CC_ALG == DL_DETECT) && \
     ISOLATION_LEVEL == REPEATABLE_READ
   if (type == RD) row->return_row(type, this, accesses[row_cnt]->data);
+#endif
+
+#if CC_ALG == PER_OP
+  cc_post_op(this, row, &accesses[row_cnt]->data, type, op_idx);
 #endif
 
   row_cnt++;
@@ -231,6 +236,9 @@ RC txn_man::finish(RC rc) {
     cleanup(rc);
 #elif CC_ALG == HEKATON
   rc = validate_hekaton(rc);
+  cleanup(rc);
+#elif CC_ALG == PER_OP
+  if (rc == RCOK) rc = cc_pre_commit(this);
   cleanup(rc);
 #else
   cleanup(rc);

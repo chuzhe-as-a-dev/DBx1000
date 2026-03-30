@@ -35,6 +35,8 @@ void print_usage() {
   printf("\t-nINT       ; NUM_WH\n");
   printf("\t-TpFLOAT    ; PERC_PAYMENT\n");
   printf("\t-TuINT      ; WH_UPDATE\n");
+  printf("\t-TrFLOAT    ; PERC_REMOTE_PAY (default 15)\n");
+  printf("\t-TsFLOAT    ; PERC_REMOTE_NEWORDER (default 1)\n");
   printf("  [TEST]:\n");
   printf("\t-Ar         ; Test READ_WRITE\n");
   printf("\t-Ac         ; Test CONFLICT\n");
@@ -103,6 +105,8 @@ void parser(int argc, char* argv[]) {
     } else if (argv[i][1] == 'T') {
       if (argv[i][2] == 'p') g_perc_payment = atof(&argv[i][3]);
       if (argv[i][2] == 'u') g_wh_update = atoi(&argv[i][3]);
+      if (argv[i][2] == 'r') g_perc_remote_pay = atof(&argv[i][3]);
+      if (argv[i][2] == 's') g_perc_remote_neworder = atof(&argv[i][3]);
     } else if (argv[i][1] == 'A') {
       if (argv[i][2] == 'r') g_test_case = READ_WRITE;
       if (argv[i][2] == 'c') g_test_case = CONFLICT;

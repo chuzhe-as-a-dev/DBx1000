@@ -47,6 +47,7 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
   RC rc = RCOK;
   uint64_t key;
   itemid_t* item;
+  int op_cnt = 0;
 
   uint64_t w_id = query->w_id;
   uint64_t c_w_id = query->c_w_id;
@@ -70,9 +71,9 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
   row_t* r_wh = ((row_t*)item->location);
   row_t* r_wh_local;
   if (g_wh_update)
-    r_wh_local = get_row(r_wh, WR);
+    r_wh_local = get_row(r_wh, WR, op_cnt++);
   else
-    r_wh_local = get_row(r_wh, RD);
+    r_wh_local = get_row(r_wh, RD, op_cnt++);
 
   if (r_wh_local == NULL) {
     return finish(Abort);
@@ -95,7 +96,7 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
   item = index_read(_wl->i_district, key, wh_to_part(w_id));
   assert(item != NULL);
   row_t* r_dist = ((row_t*)item->location);
-  row_t* r_dist_local = get_row(r_dist, WR);
+  row_t* r_dist_local = get_row(r_dist, WR, op_cnt++);
   if (r_dist_local == NULL) {
     return finish(Abort);
   }
@@ -180,7 +181,7 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
           EXEC SQL UPDATE customer SET c_balance = :c_balance, c_data =
   :c_new_data WHERE c_w_id = :c_w_id AND c_d_id = :c_d_id AND c_id = :c_id;
   +======================================================================*/
-  row_t* r_cust_local = get_row(r_cust, WR);
+  row_t* r_cust_local = get_row(r_cust, WR, op_cnt++);
   if (r_cust_local == NULL) {
     return finish(Abort);
   }
@@ -250,6 +251,7 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   uint64_t key;
   itemid_t* item;
   INDEX* index;
+  int op_cnt = 0;
 
   bool remote = query->remote;
   uint64_t w_id = query->w_id;
@@ -268,7 +270,7 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   item = index_read(index, key, wh_to_part(w_id));
   assert(item != NULL);
   row_t* r_wh = ((row_t*)item->location);
-  row_t* r_wh_local = get_row(r_wh, RD);
+  row_t* r_wh_local = get_row(r_wh, RD, op_cnt++);
   if (r_wh_local == NULL) {
     return finish(Abort);
   }
@@ -280,7 +282,7 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   item = index_read(index, key, wh_to_part(w_id));
   assert(item != NULL);
   row_t* r_cust = (row_t*)item->location;
-  row_t* r_cust_local = get_row(r_cust, RD);
+  row_t* r_cust_local = get_row(r_cust, RD, op_cnt++);
   if (r_cust_local == NULL) {
     return finish(Abort);
   }
@@ -302,7 +304,7 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   item = index_read(_wl->i_district, key, wh_to_part(w_id));
   assert(item != NULL);
   row_t* r_dist = ((row_t*)item->location);
-  row_t* r_dist_local = get_row(r_dist, WR);
+  row_t* r_dist_local = get_row(r_dist, WR, op_cnt++);
   if (r_dist_local == NULL) {
     return finish(Abort);
   }
@@ -355,7 +357,7 @@ EXEC SQL INSERT INTO NEW_ORDER (no_o_id, no_d_id, no_w_id)
     assert(item != NULL);
     row_t* r_item = ((row_t*)item->location);
 
-    row_t* r_item_local = get_row(r_item, RD);
+    row_t* r_item_local = get_row(r_item, RD, op_cnt++);
     if (r_item_local == NULL) {
       return finish(Abort);
     }
@@ -386,7 +388,7 @@ EXEC SQL INSERT INTO NEW_ORDER (no_o_id, no_d_id, no_w_id)
     index_read(stock_index, stock_key, wh_to_part(ol_supply_w_id), stock_item);
     assert(item != NULL);
     row_t* r_stock = ((row_t*)stock_item->location);
-    row_t* r_stock_local = get_row(r_stock, WR);
+    row_t* r_stock_local = get_row(r_stock, WR, op_cnt++);
     if (r_stock_local == NULL) {
       return finish(Abort);
     }

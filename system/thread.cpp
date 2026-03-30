@@ -2,6 +2,7 @@
 
 #include <sched.h>
 
+#include "cc_hooks.h"
 #include "global.h"
 #include "manager.h"
 #include "mem_alloc.h"
@@ -154,8 +155,15 @@ RC thread_t::run() {
 #if CC_ALG != VLL
       if (WORKLOAD == TEST)
         rc = runTest(m_txn);
-      else
+      else {
+#if CC_ALG == PER_OP
+        cc_pre_txn(this, m_txn, m_query);
+#endif
         rc = m_txn->run_txn(m_query);
+#if CC_ALG == PER_OP
+        cc_post_txn(this, m_txn, rc);
+#endif
+      }
 #endif
 #if CC_ALG == HSTORE
       if (WORKLOAD == TEST) {

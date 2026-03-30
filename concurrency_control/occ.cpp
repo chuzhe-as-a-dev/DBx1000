@@ -4,8 +4,13 @@
 #include "helper.h"
 #include "manager.h"
 #include "mem_alloc.h"
+#include "row.h"
 #include "row_occ.h"
 #include "txn.h"
+
+#if CC_ALG == OCC
+static inline Row_occ* cc_mgr(row_t* r) { return (Row_occ*)r->cc_row_state; }
+#endif
 
 set_ent::set_ent() {
   set_size = 0;
@@ -67,8 +72,8 @@ RC OptCC::per_row_validate(txn_man* txn) {
   int lock_cnt = 0;
   for (int i = 0; i < txn->row_cnt && ok; i++) {
     lock_cnt++;
-    txn->accesses[i]->orig_row->manager->latch();
-    ok = txn->accesses[i]->orig_row->manager->validate(txn->start_ts);
+    cc_mgr(txn->accesses[i]->orig_row)->latch();
+    ok = cc_mgr(txn->accesses[i]->orig_row)->validate(txn->start_ts);
   }
   if (ok) {
     // Validation passed.
@@ -83,7 +88,7 @@ RC OptCC::per_row_validate(txn_man* txn) {
   }
 
   for (int i = 0; i < lock_cnt; i++)
-    txn->accesses[i]->orig_row->manager->release();
+    cc_mgr(txn->accesses[i]->orig_row)->release();
 #endif
   return rc;
 }

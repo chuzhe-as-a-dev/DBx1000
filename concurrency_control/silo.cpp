@@ -3,6 +3,7 @@
 #include "txn.h"
 
 #if CC_ALG == SILO
+static inline Row_silo* cc_mgr(row_t* r) { return (Row_silo*)r->cc_row_state; }
 
 RC txn_man::validate_silo() {
   RC rc = RCOK;
@@ -36,14 +37,14 @@ RC txn_man::validate_silo() {
   if (_pre_abort) {
     for (int i = 0; i < wr_cnt; i++) {
       row_t* row = accesses[write_set[i]]->orig_row;
-      if (row->manager->get_tid() != accesses[write_set[i]]->tid) {
+      if (cc_mgr(row)->get_tid() != accesses[write_set[i]]->tid) {
         rc = Abort;
         goto final;
       }
     }
     for (int i = 0; i < row_cnt - wr_cnt; i++) {
       Access* access = accesses[read_set[i]];
-      if (access->orig_row->manager->get_tid() != accesses[read_set[i]]->tid) {
+      if (cc_mgr(access->orig_row)->get_tid() != accesses[read_set[i]]->tid) {
         rc = Abort;
         goto final;
       }
@@ -56,10 +57,10 @@ RC txn_man::validate_silo() {
       num_locks = 0;
       for (int i = 0; i < wr_cnt; i++) {
         row_t* row = accesses[write_set[i]]->orig_row;
-        if (!row->manager->try_lock()) break;
-        row->manager->assert_lock();
+        if (!cc_mgr(row)->try_lock()) break;
+        cc_mgr(row)->assert_lock();
         num_locks++;
-        if (row->manager->get_tid() != accesses[write_set[i]]->tid) {
+        if (cc_mgr(row)->get_tid() != accesses[write_set[i]]->tid) {
           rc = Abort;
           goto final;
         }
@@ -68,19 +69,19 @@ RC txn_man::validate_silo() {
         done = true;
       else {
         for (int i = 0; i < num_locks; i++)
-          accesses[write_set[i]]->orig_row->manager->release();
+          cc_mgr(accesses[write_set[i]]->orig_row)->release();
         if (_pre_abort) {
           num_locks = 0;
           for (int i = 0; i < wr_cnt; i++) {
             row_t* row = accesses[write_set[i]]->orig_row;
-            if (row->manager->get_tid() != accesses[write_set[i]]->tid) {
+            if (cc_mgr(row)->get_tid() != accesses[write_set[i]]->tid) {
               rc = Abort;
               goto final;
             }
           }
           for (int i = 0; i < row_cnt - wr_cnt; i++) {
             Access* access = accesses[read_set[i]];
-            if (access->orig_row->manager->get_tid() !=
+            if (cc_mgr(access->orig_row)->get_tid() !=
                 accesses[read_set[i]]->tid) {
               rc = Abort;
               goto final;
@@ -93,9 +94,9 @@ RC txn_man::validate_silo() {
   } else {
     for (int i = 0; i < wr_cnt; i++) {
       row_t* row = accesses[write_set[i]]->orig_row;
-      row->manager->lock();
+      cc_mgr(row)->lock();
       num_locks++;
-      if (row->manager->get_tid() != accesses[write_set[i]]->tid) {
+      if (cc_mgr(row)->get_tid() != accesses[write_set[i]]->tid) {
         rc = Abort;
         goto final;
       }
@@ -106,7 +107,7 @@ RC txn_man::validate_silo() {
   // for repeatable_read, no need to validate the read set.
   for (int i = 0; i < row_cnt - wr_cnt; i++) {
     Access* access = accesses[read_set[i]];
-    bool success = access->orig_row->manager->validate(access->tid, false);
+    bool success = cc_mgr(access->orig_row)->validate(access->tid, false);
     if (!success) {
       rc = Abort;
       goto final;
@@ -116,7 +117,7 @@ RC txn_man::validate_silo() {
   // validate rows in the write set
   for (int i = 0; i < wr_cnt; i++) {
     Access* access = accesses[write_set[i]];
-    bool success = access->orig_row->manager->validate(access->tid, true);
+    bool success = cc_mgr(access->orig_row)->validate(access->tid, true);
     if (!success) {
       rc = Abort;
       goto final;
@@ -130,13 +131,13 @@ RC txn_man::validate_silo() {
 final:
   if (rc == Abort) {
     for (int i = 0; i < num_locks; i++)
-      accesses[write_set[i]]->orig_row->manager->release();
+      cc_mgr(accesses[write_set[i]]->orig_row)->release();
     cleanup(rc);
   } else {
     for (int i = 0; i < wr_cnt; i++) {
       Access* access = accesses[write_set[i]];
-      access->orig_row->manager->write(access->data, _cur_tid);
-      accesses[write_set[i]]->orig_row->manager->release();
+      cc_mgr(access->orig_row)->write(access->data, _cur_tid);
+      cc_mgr(accesses[write_set[i]]->orig_row)->release();
     }
     cleanup(rc);
   }

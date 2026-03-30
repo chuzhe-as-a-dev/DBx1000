@@ -10,6 +10,7 @@
 #include "ycsb.h"
 #include "ycsb_query.h"
 #if CC_ALG == VLL
+static inline Row_vll* cc_mgr(row_t* r) { return (Row_vll*)r->cc_row_state; }
 
 void VLLMan::init() {
   _txn_queue_size = 0;
@@ -36,7 +37,7 @@ void VLLMan::vllMainLoop(txn_man* txn, base_query* query) {
     row_t* row = ((row_t*)item->location);
     // the following line adds the read/write sets to txn->accesses
     txn->get_row(row, req->rtype);
-    int cs = row->manager->get_cs();
+    int cs = cc_mgr(row)->get_cs();
   }
 
   bool done = false;
@@ -85,7 +86,7 @@ int VLLMan::beginTxn(txn_man* txn, base_query* query, TxnQEntry*& entry) {
 
   for (int rid = 0; rid < txn->row_cnt; rid++) {
     access_t type = txn->accesses[rid]->type;
-    if (txn->accesses[rid]->orig_row->manager->insert_access(type))
+    if (cc_mgr(txn->accesses[rid]->orig_row)->insert_access(type))
       txn->vll_txn_type = VLL_Blocked;
   }
 
@@ -131,7 +132,7 @@ void VLLMan::finishTxn(txn_man* txn, TxnQEntry* entry) {
 
   for (int rid = 0; rid < txn->row_cnt; rid++) {
     access_t type = txn->accesses[rid]->type;
-    txn->accesses[rid]->orig_row->manager->remove_access(type);
+    cc_mgr(txn->accesses[rid]->orig_row)->remove_access(type);
   }
   LIST_REMOVE_HT(entry, _txn_queue, _txn_queue_tail);
   pthread_mutex_unlock(&_mutex);

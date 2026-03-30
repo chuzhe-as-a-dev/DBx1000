@@ -10,6 +10,7 @@ cmake --build build --parallel
 ```
 
 This builds one binary per (algorithm, workload) combination: `build/rundb_<alg>_<wl>`.
+PER_OP hook variants produce `build/rundb_per_op_<variant>_<wl>` (e.g., `rundb_per_op_2pl_ycsb`).
 
 Default build type is `RelWithDebInfo`. To change: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug`
 
@@ -47,7 +48,7 @@ Key runtime flags:
 
 Compile-time defaults live in [config.h](config.h). CMake `-D` flags override them; see the `#ifndef` guards at the top of config.h. Key parameters:
 
-- `CC_ALG` — set per binary via `-DDBX_ALGS`; valid values: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`
+- `CC_ALG` — set per binary via `-DDBX_ALGS`; valid values: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`, `PER_OP`
 - `WORKLOAD` — set per binary via `-DDBX_WORKLOADS`; `YCSB` or `TPCC` (or `TEST`)
 - `THREAD_CNT` — compile-time default for thread count; overridden at runtime by `-t` (stored in `g_thread_cnt`)
 - `INDEX_STRUCT` — `IDX_HASH` or `IDX_BTREE`
@@ -69,12 +70,12 @@ DBx1000 is an in-memory OLTP database benchmark for evaluating concurrency contr
 
 - **`workload`** ([system/wl.h](system/wl.h)) — base class for YCSB/TPCC; initializes tables, indexes, and produces `txn_man` instances
 - **`txn_man`** ([system/txn.h](system/txn.h)) — base class for transaction logic; subclassed per workload; calls `row_t::get_row()` / `return_row()` which dispatch to the CC manager. `cleanup()` resets all per-transaction state at commit/abort.
-- **`row_t`** ([storage/row.h](storage/row.h)) — a database row; contains a `manager` field whose type is selected at compile time by `CC_ALG`
-- **`Row_*` managers** ([concurrency_control/row_*.h](concurrency_control/)) — per-row CC state; one class per algorithm (e.g. `Row_tictoc`, `Row_lock`, `Row_mvcc`)
+- **`row_t`** ([storage/row.h](storage/row.h)) — a database row; contains `void* cc_row_state` (opaque per-row CC state, cast by each algorithm's `cc_mgr()` helper)
+- **`Row_*` managers** ([concurrency_control/row_*.h](concurrency_control/)) — per-row CC state; one class per algorithm (e.g. `Row_tictoc`, `Row_lock`, `Row_mvcc`). Accessed via `cc_mgr(row)` cast helpers, not directly through `row_t`.
 
 ### CC algorithm selection
 
-The CC algorithm is chosen entirely at compile time via `CC_ALG`. The `row_t::manager` field type, the validation logic in `txn_man`, and the global manager (if any) are all `#if CC_ALG == ...` guarded. Adding a new algorithm requires touching `row.h`, `txn.h`, `txn.cpp`, and creating a new `row_<alg>.h/.cpp` pair.
+The CC algorithm is chosen entirely at compile time via `CC_ALG`. The `row_t::cc_row_state` cast helpers, the validation logic in `txn_man`, and the global manager (if any) are all `#if CC_ALG == ...` guarded. Adding a new baseline algorithm requires touching `row.cpp`, `txn.h`, `txn.cpp`, and creating a new `row_<alg>.h/.cpp` pair. For PER_OP, just add a new `cc_hooks_<variant>.cpp` and register it in `DBX_PER_OP_VARIANTS`.
 
 ### Critical build constraint: CC_ALG affects txn_man struct layout
 

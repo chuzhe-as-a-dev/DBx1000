@@ -22,10 +22,11 @@ void ycsb_txn_man::init(thread_t* h_thd, workload* h_wl, uint64_t thd_id) {
 }
 
 RC ycsb_txn_man::run_txn(base_query* query) {
-  RC rc;
+  RC rc = RCOK;
   ycsb_query* m_query = (ycsb_query*)query;
   ycsb_wl* wl = (ycsb_wl*)h_wl;
   itemid_t* m_item = NULL;
+  int op_cnt = 0;
 
   for (uint32_t rid = 0; rid < m_query->request_cnt; rid++) {
     ycsb_request* req = &m_query->requests[rid];
@@ -46,30 +47,25 @@ RC ycsb_txn_man::run_txn(base_query* query) {
       row_t* row_local;
       access_t type = req->rtype;
 
-      row_local = get_row(row, type);
+      row_local = get_row(row, type, op_cnt);
       if (row_local == NULL) {
         rc = Abort;
         goto final;
       }
+      op_cnt++;
 
       // Computation //
       // Only do computation when there are more than 1 requests.
       if (m_query->request_cnt > 1) {
         if (req->rtype == RD || req->rtype == SCAN) {
-          //                  for (int fid = 0; fid < schema->get_field_cnt();
-          //                  fid++) {
           int fid = 0;
           char* data = row_local->get_data();
           __attribute__((unused)) uint64_t fval = *(uint64_t*)(&data[fid * 10]);
-          //                  }
         } else {
           assert(req->rtype == WR);
-          //					for (int fid = 0; fid <
-          // schema->get_field_cnt(); fid++) {
           int fid = 0;
-          char* data = row->get_data();
+          char* data = row_local->get_data();
           *(uint64_t*)(&data[fid * 10]) = 0;
-          //					}
         }
       }
 
@@ -78,7 +74,6 @@ RC ycsb_txn_man::run_txn(base_query* query) {
         finish_req = true;
     }
   }
-  rc = RCOK;
 final:
   rc = finish(rc);
   return rc;

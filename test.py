@@ -3,8 +3,18 @@
 import os, sys, subprocess, datetime, time, signal
 
 build_dir = "build"
+
+# Baseline algorithms
 algs = ['DL_DETECT', 'NO_WAIT', 'HEKATON', 'SILO', 'TICTOC']
 workloads = ['YCSB', 'TPCC', 'TEST']
+
+# PER_OP hook variants — each links a different cc_hooks_*.cpp.
+# TEST workload is skipped: it calls txn_man::get_row() directly, bypassing
+# cc_pre_op/cc_post_op hooks. See NOTES.md for details.
+# MVCC TPCC is skipped: heavy per-row version history init makes TPCC too slow.
+per_op_variants = ['NOOP', '2PL', 'OCC', 'MVCC']
+per_op_workloads = ['YCSB', 'TPCC']
+per_op_skip = {'MVCC': {'TPCC'}}
 
 
 def build_all():
@@ -51,6 +61,7 @@ def test_run(binary, alg, workload, test=''):
 
 build_all()
 
+# Baseline algorithms
 for alg in algs:
     for wl in workloads:
         binary = os.path.join(build_dir, "rundb_%s_%s" % (alg.lower(), wl.lower()))
@@ -58,5 +69,15 @@ for alg in algs:
             test_run(binary, alg, wl, 'read_write')
         else:
             test_run(binary, alg, wl)
+
+# PER_OP variants
+for variant in per_op_variants:
+    alg_name = "PER_OP_%s" % variant
+    for wl in per_op_workloads:
+        if wl in per_op_skip.get(variant, set()):
+            print("SKIP execution. \talg=%s,\tworkload=%s (prototype limitation)" % (alg_name, wl))
+            continue
+        binary = os.path.join(build_dir, "rundb_per_op_%s_%s" % (variant.lower(), wl.lower()))
+        test_run(binary, alg_name, wl)
 
 os.system("rm -f temp.out")

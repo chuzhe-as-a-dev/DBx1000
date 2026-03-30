@@ -4,6 +4,9 @@
 #include "txn.h"
 
 #if CC_ALG == HEKATON
+static inline Row_hekaton* cc_mgr(row_t* r) {
+  return (Row_hekaton*)r->cc_row_state;
+}
 
 RC txn_man::validate_hekaton(RC rc) {
   uint64_t starttime = get_sys_clock();
@@ -14,8 +17,8 @@ RC txn_man::validate_hekaton(RC rc) {
   if (rc == RCOK) {
     for (int rid = 0; rid < row_cnt; rid++) {
       if (accesses[rid]->type == WR) continue;
-      rc = accesses[rid]->orig_row->manager->prepare_read(
-          this, accesses[rid]->data, commit_ts);
+      rc = cc_mgr(accesses[rid]->orig_row)
+               ->prepare_read(this, accesses[rid]->data, commit_ts);
       if (rc == Abort) break;
     }
   }
@@ -23,7 +26,7 @@ RC txn_man::validate_hekaton(RC rc) {
   // postprocess
   for (int rid = 0; rid < row_cnt; rid++) {
     if (accesses[rid]->type == RD) continue;
-    accesses[rid]->orig_row->manager->post_process(this, commit_ts, rc);
+    cc_mgr(accesses[rid]->orig_row)->post_process(this, commit_ts, rc);
   }
   return rc;
 }

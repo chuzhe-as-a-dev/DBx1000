@@ -33,3 +33,11 @@ foreach(alg IN LISTS DBX_ALGS)
         target_compile_definitions(cc_${alg_lower} PRIVATE CC_ALG=${alg})
     endif()
 endforeach()
+
+# PER_OP hook variants — each links a different cc_hooks_*.cpp
+foreach(variant IN LISTS DBX_PER_OP_VARIANTS)
+    string(TOLOWER "${variant}" var_lower)
+    add_library(cc_per_op_${var_lower} OBJECT cc_hooks_${var_lower}.cpp)
+    target_compile_definitions(cc_per_op_${var_lower} PRIVATE CC_ALG=PER_OP)
+    target_link_libraries(cc_per_op_${var_lower} PRIVATE dbx_includes)
+endforeach()

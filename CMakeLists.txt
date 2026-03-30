@@ -51,8 +51,13 @@ add_library(dbx_includes INTERFACE)
 target_include_directories(dbx_includes INTERFACE ${DBX_INCLUDE_DIRS})
 
 # Build matrix: CC algorithms × workloads
-set(DBX_ALGS "DL_DETECT;NO_WAIT;HEKATON;SILO;TICTOC")
+# PER_OP is included for subdirectory object libraries but executables are
+# built separately below (one per hook variant: 2PL, OCC, MVCC).
+set(DBX_ALGS "DL_DETECT;NO_WAIT;HEKATON;SILO;TICTOC;PER_OP")
 set(DBX_WORKLOADS "YCSB;TPCC;TEST")
+
+# PER_OP hook variants — each links a different cc_hooks_*.cpp
+set(DBX_PER_OP_VARIANTS "NOOP;2PL;OCC;MVCC")
 
 # Root-level common OBJECT lib
 add_library(config_common OBJECT config.cpp)
@@ -64,14 +69,27 @@ add_subdirectory(concurrency_control)
 add_subdirectory(storage)
 add_subdirectory(system)
 
-# Assemble executables from OBJECT libs
+# Helper macro for linking common libs to an executable
+macro(dbx_link_common target)
+    target_link_libraries(${target} PRIVATE Threads::Threads dbx_jemalloc)
+    if(RT_LIBRARY)
+        target_link_libraries(${target} PRIVATE ${RT_LIBRARY})
+    endif()
+    if(DBX_USE_LOCAL_JEMALLOC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_options(${target} PRIVATE -no-pie)
+    endif()
+endmacro()
+
+# Assemble executables: baseline algorithms (PER_OP handled separately below)
 foreach(alg IN LISTS DBX_ALGS)
+    if(alg STREQUAL "PER_OP")
+        continue()
+    endif()
     string(TOLOWER "${alg}" alg_lower)
     foreach(wl IN LISTS DBX_WORKLOADS)
         string(TOLOWER "${wl}" wl_lower)
         set(target "rundb_${alg_lower}_${wl_lower}")
 
-        # Check if this algorithm has CC-specific objects
         set(cc_objs)
         if(TARGET cc_${alg_lower})
             set(cc_objs $<TARGET_OBJECTS:cc_${alg_lower}>)
@@ -88,13 +106,31 @@ foreach(alg IN LISTS DBX_ALGS)
             $<TARGET_OBJECTS:storage_${alg_lower}>
             $<TARGET_OBJECTS:system_${alg_lower}_${wl_lower}>
         )
+        dbx_link_common(${target})
+    endforeach()
+endforeach()
 
-        target_link_libraries(${target} PRIVATE Threads::Threads dbx_jemalloc)
-        if(RT_LIBRARY)
-            target_link_libraries(${target} PRIVATE ${RT_LIBRARY})
+# Assemble executables: PER_OP variants (skip TEST workload)
+foreach(variant IN LISTS DBX_PER_OP_VARIANTS)
+    string(TOLOWER "${variant}" var_lower)
+    foreach(wl IN LISTS DBX_WORKLOADS)
+        if(wl STREQUAL "TEST")
+            continue()
         endif()
-        if(DBX_USE_LOCAL_JEMALLOC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_link_options(${target} PRIVATE -no-pie)
-        endif()
+        string(TOLOWER "${wl}" wl_lower)
+        set(target "rundb_per_op_${var_lower}_${wl_lower}")
+
+        add_executable(${target}
+            $<TARGET_OBJECTS:config_common>
+            $<TARGET_OBJECTS:benchmarks_common>
+            $<TARGET_OBJECTS:cc_common>
+            $<TARGET_OBJECTS:storage_common>
+            $<TARGET_OBJECTS:system_common>
+            $<TARGET_OBJECTS:cc_per_op_${var_lower}>
+            $<TARGET_OBJECTS:benchmarks_${wl_lower}_per_op>
+            $<TARGET_OBJECTS:storage_per_op>
+            $<TARGET_OBJECTS:system_per_op_${wl_lower}>
+        )
+        dbx_link_common(${target})
     endforeach()
 endforeach()

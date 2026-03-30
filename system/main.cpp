@@ -1,3 +1,4 @@
+#include "cc_hooks.h"
 #include "global.h"
 #include "manager.h"
 #include "mem_alloc.h"
@@ -61,6 +62,8 @@ int main(int argc, char* argv[]) {
   occ_man.init();
 #elif CC_ALG == VLL
   vll_man.init();
+#elif CC_ALG == PER_OP
+  cc_global_init();
 #endif
 
   for (uint32_t i = 0; i < thd_cnt; i++) g_threads[i]->init(i, m_wl);

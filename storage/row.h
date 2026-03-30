@@ -20,14 +20,6 @@
 class table_t;
 class Catalog;
 class txn_man;
-class Row_lock;
-class Row_mvcc;
-class Row_hekaton;
-class Row_ts;
-class Row_occ;
-class Row_tictoc;
-class Row_silo;
-class Row_vll;
 
 class row_t {
  public:
@@ -74,28 +66,10 @@ class row_t {
   void free_row();
 
   // for concurrency control. can be lock, timestamp etc.
-  RC get_row(access_t type, txn_man* txn, row_t*& row);
-  void return_row(access_t type, txn_man* txn, row_t* row);
+  RC get_row(access_t type, txn_man* txn, row_t*& row, int op_idx = -1);
+  void return_row(access_t type, txn_man* txn, row_t* row, int op_idx = -1);
 
-#if CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE
-  Row_lock* manager;
-#elif CC_ALG == TIMESTAMP
-  Row_ts* manager;
-#elif CC_ALG == MVCC
-  Row_mvcc* manager;
-#elif CC_ALG == HEKATON
-  Row_hekaton* manager;
-#elif CC_ALG == OCC
-  Row_occ* manager;
-#elif CC_ALG == TICTOC
-  Row_tictoc* manager;
-#elif CC_ALG == SILO
-  Row_silo* manager;
-#elif CC_ALG == VLL
-  Row_vll* manager;
-#else  // HSTORE: no per-row manager, but keep field to maintain sizeof(row_t)
-  void* manager;
-#endif
+  void* cc_row_state;  // opaque per-row CC state; cast by each CC algorithm
   char* data;
   table_t* table;
 

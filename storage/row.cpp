@@ -3,6 +3,7 @@
 #include <mm_malloc.h>
 
 #include "catalog.h"
+#include "cc_hooks.h"
 #include "global.h"
 #include "manager.h"
 #include "mem_alloc.h"
@@ -16,6 +17,30 @@
 #include "row_vll.h"
 #include "table.h"
 #include "txn.h"
+
+// Cast helpers: each CC algorithm accesses cc_row_state through its own typed
+// pointer.
+#if CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE
+static inline Row_lock* cc_mgr(row_t* r) { return (Row_lock*)r->cc_row_state; }
+#elif CC_ALG == TIMESTAMP
+static inline Row_ts* cc_mgr(row_t* r) { return (Row_ts*)r->cc_row_state; }
+#elif CC_ALG == MVCC
+static inline Row_mvcc* cc_mgr(row_t* r) { return (Row_mvcc*)r->cc_row_state; }
+#elif CC_ALG == HEKATON
+static inline Row_hekaton* cc_mgr(row_t* r) {
+  return (Row_hekaton*)r->cc_row_state;
+}
+#elif CC_ALG == OCC
+static inline Row_occ* cc_mgr(row_t* r) { return (Row_occ*)r->cc_row_state; }
+#elif CC_ALG == TICTOC
+static inline Row_tictoc* cc_mgr(row_t* r) {
+  return (Row_tictoc*)r->cc_row_state;
+}
+#elif CC_ALG == SILO
+static inline Row_silo* cc_mgr(row_t* r) { return (Row_silo*)r->cc_row_state; }
+#elif CC_ALG == VLL
+static inline Row_vll* cc_mgr(row_t* r) { return (Row_vll*)r->cc_row_state; }
+#endif
 
 RC row_t::init(table_t* host_table, uint64_t part_id, uint64_t row_id) {
   _row_id = row_id;
@@ -40,26 +65,30 @@ RC row_t::switch_schema(table_t* host_table) {
 // HSTORE has no per-row manager — partition locks are used instead.
 // (AI-generated)
 void row_t::init_manager(row_t* row) {
-#if CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE
-  manager = (Row_lock*)mem_allocator.alloc(sizeof(Row_lock), _part_id);
+#if CC_ALG == PER_OP
+  cc_init_row_state(this);
+  (void)row;
+  return;
+#elif CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE
+  cc_row_state = (Row_lock*)mem_allocator.alloc(sizeof(Row_lock), _part_id);
 #elif CC_ALG == TIMESTAMP
-  manager = (Row_ts*)mem_allocator.alloc(sizeof(Row_ts), _part_id);
+  cc_row_state = (Row_ts*)mem_allocator.alloc(sizeof(Row_ts), _part_id);
 #elif CC_ALG == MVCC
-  manager = (Row_mvcc*)_mm_malloc(sizeof(Row_mvcc), 64);
+  cc_row_state = (Row_mvcc*)_mm_malloc(sizeof(Row_mvcc), 64);
 #elif CC_ALG == HEKATON
-  manager = (Row_hekaton*)_mm_malloc(sizeof(Row_hekaton), 64);
+  cc_row_state = (Row_hekaton*)_mm_malloc(sizeof(Row_hekaton), 64);
 #elif CC_ALG == OCC
-  manager = (Row_occ*)mem_allocator.alloc(sizeof(Row_occ), _part_id);
+  cc_row_state = (Row_occ*)mem_allocator.alloc(sizeof(Row_occ), _part_id);
 #elif CC_ALG == TICTOC
-  manager = (Row_tictoc*)_mm_malloc(sizeof(Row_tictoc), 64);
+  cc_row_state = (Row_tictoc*)_mm_malloc(sizeof(Row_tictoc), 64);
 #elif CC_ALG == SILO
-  manager = (Row_silo*)_mm_malloc(sizeof(Row_silo), 64);
+  cc_row_state = (Row_silo*)_mm_malloc(sizeof(Row_silo), 64);
 #elif CC_ALG == VLL
-  manager = (Row_vll*)mem_allocator.alloc(sizeof(Row_vll), _part_id);
+  cc_row_state = (Row_vll*)mem_allocator.alloc(sizeof(Row_vll), _part_id);
 #endif
 
-#if CC_ALG != HSTORE
-  manager->init(this);
+#if CC_ALG != HSTORE && CC_ALG != PER_OP
+  cc_mgr(this)->init(this);
 #endif
 }
 
@@ -138,7 +167,7 @@ void row_t::free_row() { _mm_free(data); }
 //   A local copy is made here so the txn works on private data.
 //
 // HSTORE / VLL: no per-row locking; return the row directly. (AI-generated)
-RC row_t::get_row(access_t type, txn_man* txn, row_t*& row) {
+RC row_t::get_row(access_t type, txn_man* txn, row_t*& row, int op_idx) {
   RC rc = RCOK;
 #if CC_ALG == WAIT_DIE || CC_ALG == NO_WAIT || CC_ALG == DL_DETECT
   uint64_t thd_id = txn->get_thd_id();
@@ -146,9 +175,9 @@ RC row_t::get_row(access_t type, txn_man* txn, row_t*& row) {
 #if CC_ALG == DL_DETECT
   uint64_t* txnids;
   int txncnt;
-  rc = this->manager->lock_get(lt, txn, txnids, txncnt);
+  rc = cc_mgr(this)->lock_get(lt, txn, txnids, txncnt);
 #else
-  rc = this->manager->lock_get(lt, txn);
+  rc = cc_mgr(this)->lock_get(lt, txn);
 #endif
 
   if (rc == RCOK) {
@@ -231,7 +260,7 @@ RC row_t::get_row(access_t type, txn_man* txn, row_t*& row) {
 
   // TODO need to initialize the table/catalog information.
   TsType ts_type = (type == RD) ? R_REQ : P_REQ;
-  rc = this->manager->access(txn, ts_type, row);
+  rc = cc_mgr(this)->access(txn, ts_type, row);
   if (rc == RCOK) {
     row = txn->cur_row;
   } else if (rc == WAIT) {
@@ -250,18 +279,23 @@ RC row_t::get_row(access_t type, txn_man* txn, row_t*& row) {
   // OCC always make a local copy regardless of read or write
   txn->cur_row = (row_t*)mem_allocator.alloc(sizeof(row_t), get_part_id());
   txn->cur_row->init(get_table(), get_part_id());
-  rc = this->manager->access(txn, R_REQ);
+  rc = cc_mgr(this)->access(txn, R_REQ);
   row = txn->cur_row;
   return rc;
 #elif CC_ALG == TICTOC || CC_ALG == SILO
   // like OCC, tictoc also makes a local copy for each read/write
   row->table = get_table();
   TsType ts_type = (type == RD) ? R_REQ : P_REQ;
-  rc = this->manager->access(txn, ts_type, row);
+  rc = cc_mgr(this)->access(txn, ts_type, row);
   return rc;
 #elif CC_ALG == HSTORE || CC_ALG == VLL
   row = this;
   return rc;
+#elif CC_ALG == PER_OP
+  rc = cc_pre_op(txn, this, type, op_idx);
+  if (rc != RCOK) return rc;
+  row = this;
+  return RCOK;
 #else
   assert(false);
 #endif
@@ -274,13 +308,13 @@ RC row_t::get_row(access_t type, txn_man* txn, row_t*& row) {
 // delete during history cleanup.
 // For TIMESTAMP, the row will be explicity deleted at the end of access().
 // (cf. row_ts.cpp)
-void row_t::return_row(access_t type, txn_man* txn, row_t* row) {
+void row_t::return_row(access_t type, txn_man* txn, row_t* row, int op_idx) {
 #if CC_ALG == WAIT_DIE || CC_ALG == NO_WAIT || CC_ALG == DL_DETECT
   assert(row == NULL || row == this || type == XP);
   if (ROLL_BACK && type == XP) {  // recover from previous writes.
     this->copy(row);
   }
-  this->manager->lock_release(txn);
+  cc_mgr(this)->lock_release(txn);
 #elif CC_ALG == TIMESTAMP || CC_ALG == MVCC
   // for RD or SCAN or XP, the row should be deleted.
   // because all WR should be companied by a RD
@@ -292,16 +326,16 @@ void row_t::return_row(access_t type, txn_man* txn, row_t* row) {
   }
 #endif
   if (type == XP) {
-    this->manager->access(txn, XP_REQ, row);
+    cc_mgr(this)->access(txn, XP_REQ, row);
   } else if (type == WR) {
     assert(type == WR && row != NULL);
     assert(row->get_schema() == this->get_schema());
-    RC rc = this->manager->access(txn, W_REQ, row);
+    RC rc = cc_mgr(this)->access(txn, W_REQ, row);
     assert(rc == RCOK);
   }
 #elif CC_ALG == OCC
   assert(row != NULL);
-  if (type == WR) manager->write(row, txn->end_ts);
+  if (type == WR) cc_mgr(this)->write(row, txn->end_ts);
   row->free_row();
   mem_allocator.free(row, sizeof(row_t));
   return;
@@ -309,6 +343,9 @@ void row_t::return_row(access_t type, txn_man* txn, row_t* row) {
   assert(row != NULL);
   return;
 #elif CC_ALG == HSTORE || CC_ALG == VLL
+  return;
+#elif CC_ALG == PER_OP
+  cc_release_op(txn, this, row, type, op_idx);
   return;
 #else
   assert(false);
