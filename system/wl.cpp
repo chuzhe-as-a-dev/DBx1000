@@ -119,6 +119,6 @@ void workload::index_insert(INDEX* index, uint64_t key, row_t* row,
   m_item->location = row;
   m_item->valid = true;
 
-  RC rc = index->index_insert(key, m_item, pid);
+  [[maybe_unused]] RC rc = index->index_insert(key, m_item, pid);
   assert(rc == RCOK);
 }

@@ -15,7 +15,9 @@
 #define CPU_FREQ 2  // in GHz/s
 
 // # of transactions to run for warmup
+#ifndef WARMUP
 #define WARMUP 0
+#endif
 // YCSB or TPCC
 #ifndef WORKLOAD
 #define WORKLOAD YCSB
