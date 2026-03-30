@@ -5,11 +5,12 @@ Runs TPC-C across multiple algorithms and thread counts.
 All logs, raw output, and parsed CSV are stored in a timestamped results folder.
 
 Usage:
-  # Conflict-free TPC-C (default)
+  # Conflict-free TPC-C (default: warehouses = threads, zero remote)
   python3 bench.py --threads 1,2,4,8,16,24,48 --runs 3
 
-  # Standard TPC-C with 4 warehouses
-  python3 bench.py --threads 1,2,4,8,16,24,48 --runs 3 --tpcc-flags="-n4"
+  # Standard TPC-C with 4 warehouses and default remote probabilities
+  python3 bench.py --threads 1,2,4,8,16,24,48 --runs 3 --warehouses 4 \
+      --perc-remote-pay 15 --perc-remote-neworder 1
 
   # Quick sanity check
   python3 bench.py --threads 1 --runs 1 --algs per_op_noop,no_wait
@@ -29,7 +30,7 @@ DEFAULT_ALGS = [
 CSV_FIELDS = [
     # Input parameters
     'algorithm', 'threads', 'run',
-    'max_txn_per_part', 'warmup', 'tpcc_flags',
+    'max_txn_per_part', 'warmup', 'warehouses', 'perc_remote_pay', 'perc_remote_neworder',
     # Output metrics
     'txn_cnt', 'abort_cnt', 'run_time', 'throughput',
     'time_man', 'time_index', 'time_cleanup', 'latency',
@@ -70,13 +71,15 @@ def build(build_dir, max_txn, warmup, log):
     log.write('Build complete.\n\n')
     log.flush()
 
-def run_one(build_dir, alg, threads, tpcc_flags_template, log, raw_log):
-    """Run a single benchmark. Returns (cmd, summary, stdout, stderr)."""
+def run_one(build_dir, alg, threads, warehouses, perc_remote_pay, perc_remote_neworder, log, raw_log):
+    """Run a single benchmark. Returns (cmd, summary)."""
     binary = os.path.join(build_dir, f'rundb_{alg}_tpcc')
     if not os.path.exists(binary):
-        return None, None, '', ''
-    flags = tpcc_flags_template.replace('{threads}', str(threads))
-    cmd = f'{binary} -t{threads} {flags}'
+        return None, None
+
+    n_wh = threads if warehouses == 0 else warehouses
+    cmd = (f'{binary} -t{threads} -n{n_wh}'
+           f' -Tr{perc_remote_pay} -Ts{perc_remote_neworder}')
 
     log.write(f'$ {cmd}\n')
     log.flush()
@@ -85,7 +88,7 @@ def run_one(build_dir, alg, threads, tpcc_flags_template, log, raw_log):
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
     except subprocess.TimeoutExpired:
         log.write('  TIMEOUT\n')
-        return cmd, None, '', ''
+        return cmd, None
 
     # Log raw output
     raw_log.write(f'=== {cmd} ===\n')
@@ -97,10 +100,10 @@ def run_one(build_dir, alg, threads, tpcc_flags_template, log, raw_log):
 
     if result.returncode != 0:
         log.write(f'  EXIT CODE {result.returncode}\n')
-        return cmd, None, result.stdout, result.stderr
+        return cmd, None
 
     summary = parse_summary(result.stdout)
-    return cmd, summary, result.stdout, result.stderr
+    return cmd, summary
 
 def main():
     parser = argparse.ArgumentParser(description='PER_OP benchmark driver')
@@ -109,12 +112,16 @@ def main():
     parser.add_argument('--runs', type=int, default=3, help='Runs per combination')
     parser.add_argument('--algs', default=None,
                         help='Comma-separated algorithms (default: all)')
-    parser.add_argument('--tpcc-flags', default='-n{threads} -Tr0 -Ts0',
-                        help='TPCC flags ({threads} is replaced per run)')
     parser.add_argument('--max-txn', type=int, default=100000,
                         help='MAX_TXN_PER_PART (default 100000)')
     parser.add_argument('--warmup', type=int, default=0,
                         help='WARMUP transactions (default 0)')
+    parser.add_argument('--warehouses', type=int, default=0,
+                        help='Number of warehouses (default 0 = match thread count)')
+    parser.add_argument('--perc-remote-pay', type=float, default=0,
+                        help='%% payments with remote customer (default 0)')
+    parser.add_argument('--perc-remote-neworder', type=float, default=0,
+                        help='%% new-order lines from remote warehouse (default 0)')
     parser.add_argument('--build-dir', default='build_perf')
     parser.add_argument('--results-dir', default='results',
                         help='Base directory for results (default: results)')
@@ -144,14 +151,18 @@ def main():
     log.write(f'Build dir:  {args.build_dir}\n')
     log.write(f'Results:    {run_dir}/\n\n')
 
+    wh_desc = f'{args.warehouses}' if args.warehouses > 0 else '= threads'
+
     # Log parameters
     log.write(f'=== PARAMETERS ===\n')
-    log.write(f'algorithms:       {", ".join(algs)}\n')
-    log.write(f'threads:          {", ".join(str(t) for t in thread_counts)}\n')
-    log.write(f'runs:             {args.runs}\n')
-    log.write(f'max_txn_per_part: {args.max_txn}\n')
-    log.write(f'warmup:           {args.warmup}\n')
-    log.write(f'tpcc_flags:       {args.tpcc_flags}\n\n')
+    log.write(f'algorithms:            {", ".join(algs)}\n')
+    log.write(f'threads:               {", ".join(str(t) for t in thread_counts)}\n')
+    log.write(f'runs:                  {args.runs}\n')
+    log.write(f'max_txn_per_part:      {args.max_txn}\n')
+    log.write(f'warmup:                {args.warmup}\n')
+    log.write(f'warehouses:            {wh_desc}\n')
+    log.write(f'perc_remote_pay:       {args.perc_remote_pay}\n')
+    log.write(f'perc_remote_neworder:  {args.perc_remote_neworder}\n\n')
     log.flush()
 
     print(f'Results directory: {run_dir}/')
@@ -178,8 +189,10 @@ def main():
                 label = f'[{done}/{total}] {alg} t={threads} run={run+1}'
                 print(f'{label}...', end=' ', flush=True)
 
-                cmd, summary, stdout, stderr = run_one(
-                    args.build_dir, alg, threads, args.tpcc_flags, log, raw_log)
+                cmd, summary = run_one(
+                    args.build_dir, alg, threads,
+                    args.warehouses, args.perc_remote_pay, args.perc_remote_neworder,
+                    log, raw_log)
 
                 if summary is None:
                     msg = 'SKIP (missing binary or timeout)'
@@ -190,16 +203,16 @@ def main():
 
                 tput = summary['txn_cnt'] / summary['run_time'] if summary['run_time'] > 0 else 0
 
-                # Resolved flags for this run
-                resolved_flags = args.tpcc_flags.replace('{threads}', str(threads))
-
+                n_wh = threads if args.warehouses == 0 else args.warehouses
                 row = {
                     'algorithm': alg,
                     'threads': threads,
                     'run': run + 1,
                     'max_txn_per_part': args.max_txn,
                     'warmup': args.warmup,
-                    'tpcc_flags': resolved_flags,
+                    'warehouses': n_wh,
+                    'perc_remote_pay': args.perc_remote_pay,
+                    'perc_remote_neworder': args.perc_remote_neworder,
                     'txn_cnt': int(summary['txn_cnt']),
                     'abort_cnt': int(summary['abort_cnt']),
                     'run_time': f'{summary["run_time"]:.6f}',
