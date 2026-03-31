@@ -18,7 +18,6 @@ class base_query;
 //     ->orig_row            row_t*   — the original row
 //     ->data                row_t*   — working copy (set by row_t::get_row,
 //                                      updatable by cc_post_op)
-//     ->orig_data           row_t*   — pre-image for rollback (hook may use)
 //   txn->row_cnt            int      — number of accesses recorded so far
 //   txn->wr_cnt             int      — number of write accesses
 //   txn->get_thd_id()       uint64_t — thread ID

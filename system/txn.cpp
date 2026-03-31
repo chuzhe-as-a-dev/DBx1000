@@ -92,16 +92,19 @@ void txn_man::cleanup(RC rc) {
       }
     }
 
-    if constexpr (cc_alg == CCAlg::DlDetect || cc_alg == CCAlg::NoWait ||
-                  cc_alg == CCAlg::WaitDie) {
-      if (roll_back && type == XP) {
-        orig_r->return_row(type, this, accesses[rid]->orig_data, rid);
+    [&]<CCAlg A = cc_alg>() {
+      if constexpr (A == CCAlg::DlDetect || A == CCAlg::NoWait ||
+                    A == CCAlg::WaitDie) {
+        if (roll_back && type == XP) {
+          auto& acc = static_cast<AccessExtra<A>&>(*accesses[rid]);
+          orig_r->return_row(type, this, acc.orig_data, rid);
+        } else {
+          orig_r->return_row(type, this, accesses[rid]->data, rid);
+        }
       } else {
         orig_r->return_row(type, this, accesses[rid]->data, rid);
       }
-    } else {
-      orig_r->return_row(type, this, accesses[rid]->data, rid);
-    }
+    }();
 
     if constexpr (cc_alg != CCAlg::Tictoc && cc_alg != CCAlg::Silo) {
       accesses[rid]->data = NULL;
@@ -151,13 +154,15 @@ row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
     if constexpr (cc_alg == CCAlg::Silo || cc_alg == CCAlg::Tictoc) {
       access->data = (row_t*)_mm_malloc(sizeof(row_t), 64);
       access->data->init(MAX_TUPLE_SIZE);
-      access->orig_data = (row_t*)_mm_malloc(sizeof(row_t), 64);
-      access->orig_data->init(MAX_TUPLE_SIZE);
-    } else if constexpr (cc_alg == CCAlg::DlDetect || cc_alg == CCAlg::NoWait ||
-                         cc_alg == CCAlg::WaitDie) {
-      access->orig_data = (row_t*)_mm_malloc(sizeof(row_t), 64);
-      access->orig_data->init(MAX_TUPLE_SIZE);
     }
+    [&]<CCAlg A = cc_alg>() {
+      if constexpr (A == CCAlg::DlDetect || A == CCAlg::NoWait ||
+                    A == CCAlg::WaitDie) {
+        auto& acc = static_cast<AccessExtra<A>&>(*access);
+        acc.orig_data = (row_t*)_mm_malloc(sizeof(row_t), 64);
+        acc.orig_data->init(MAX_TUPLE_SIZE);
+      }
+    }();
     num_accesses_alloc++;
   }
 
@@ -185,13 +190,16 @@ row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
     }
   }();
 
-  if constexpr (cc_alg == CCAlg::DlDetect || cc_alg == CCAlg::NoWait ||
-                cc_alg == CCAlg::WaitDie) {
-    if (ROLL_BACK && type == WR) {
-      accesses[row_cnt]->orig_data->table = row->get_table();
-      accesses[row_cnt]->orig_data->copy(row);
+  [this, row, type]<CCAlg A = cc_alg>() {
+    if constexpr (A == CCAlg::DlDetect || A == CCAlg::NoWait ||
+                  A == CCAlg::WaitDie) {
+      if (ROLL_BACK && type == WR) {
+        auto& acc = static_cast<AccessExtra<A>&>(*accesses[row_cnt]);
+        acc.orig_data->table = row->get_table();
+        acc.orig_data->copy(row);
+      }
     }
-  }
+  }();
 
   if constexpr ((cc_alg == CCAlg::NoWait || cc_alg == CCAlg::DlDetect) &&
                 iso_level == IsoLevel::RepeatableRead) {

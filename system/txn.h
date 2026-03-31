@@ -21,6 +21,18 @@ enum TxnType { VLL_Blocked, VLL_Free };
 template <CCAlg>
 struct AccessExtra {};
 template <>
+struct AccessExtra<CCAlg::DlDetect> {
+  row_t* orig_data;  // pre-image for rollback
+};
+template <>
+struct AccessExtra<CCAlg::NoWait> {
+  row_t* orig_data;
+};
+template <>
+struct AccessExtra<CCAlg::WaitDie> {
+  row_t* orig_data;
+};
+template <>
 struct AccessExtra<CCAlg::Tictoc> {
   ts_t wts;
   ts_t rts;
@@ -40,7 +52,6 @@ class Access : public AccessExtra<cc_alg> {
   access_t type;
   row_t* orig_row;
   row_t* data;
-  row_t* orig_data;
   void cleanup();
 };
 

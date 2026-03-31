@@ -1,8 +1,11 @@
-# PER_OP CC Hook Infrastructure — Implementation Notes
+# PER_OP Hook Infrastructure
 
-## Current Hook Interface (`cc_hooks.h`)
+Design notes for the PER_OP concurrency control mode, where CC logic is
+provided by statically-compiled hook functions in `cc_hooks_*.cpp` files.
 
-9 hooks, all `#if CC_ALG == PER_OP` guarded at call sites:
+## Hook Interface
+
+9 hooks declared in `cc_hooks.h`. All call sites are `if constexpr (cc_alg == CCAlg::PerOp)` guarded.
 
 | Hook | Called from | Purpose |
 |------|-----------|---------|
@@ -16,66 +19,63 @@
 | `cc_release_op` | `row.cpp::return_row()` | Release locks, free copies |
 | `cc_global_init` | `main.cpp` | One-time global CC init |
 
-## Hook Placement Rationale
+### Placement rationale
 
-- **cc_pre_op in `row_t::get_row()`**: Row-level CC action (lock, version check) — same dispatch point as all other CC algorithms.
-- **cc_post_op in `txn_man::get_row()`**: Called after access recording (`type`, `orig_row` set), before `row_cnt++`. Has access to the full Access struct via `txn->accesses[txn->row_cnt]`. Can set `data`, `orig_data`, or any per-access metadata.
-- **cc_release_op in `row_t::return_row()`**: Same cleanup dispatch point as all other CCs. No `rc` parameter — uses XP type convention (`type == WR` = committed write, `type == XP` = aborted write, `type == RD` = read release).
-- **cc_pre_commit in `txn_man::finish()`**: Alongside `validate_tictoc()`, `validate_silo()`, etc.
+- **cc_pre_op in `row_t::get_row()`** — where all other CCs do their row-level action.
+- **cc_post_op in `txn_man::get_row()`** — after access recording (`type`, `orig_row` set, `row_cnt` not yet incremented). Has access to full Access struct for copy/metadata decisions.
+- **cc_release_op in `row_t::return_row()`** — same cleanup dispatch as all other CCs. Uses XP type convention (WR = committed write, XP = aborted write, RD = read release).
+- **cc_pre_commit in `txn_man::finish()`** — alongside `validate_tictoc()`, `validate_silo()`, etc.
 
-## Build System
+## Example Implementations
 
-Binary naming: `rundb_per_op_{variant}_{workload}` (e.g., `rundb_per_op_2pl_ycsb`).
+Four variants, each in `concurrency_control/cc_hooks_*.cpp`:
 
-Three hook variants, each in its own file:
-- `cc_hooks_2pl.cpp` — NO_WAIT 2PL (pthread_mutex trylock)
-- `cc_hooks_occ.cpp` — OCC per-row validation (sort + latch + validate + install)
-- `cc_hooks_mvcc.cpp` — MVCC version history (prototype; simplified WAIT handling)
+| Variant | File | Description |
+|---------|------|-------------|
+| NOOP | `cc_hooks_noop.cpp` | Zero CC overhead; performance upper bound |
+| 2PL | `cc_hooks_2pl.cpp` | NO_WAIT 2PL with `pthread_rwlock` (SH/EX) |
+| OCC | `cc_hooks_occ.cpp` | Per-row OCC validation (sort + latch + validate + install) |
+| MVCC | `cc_hooks_mvcc.cpp` | Version history with simple GC (prototype) |
 
-CMake builds per-variant object libraries (`cc_per_op_2pl`, `cc_per_op_occ`, `cc_per_op_mvcc`), each compiled with `CC_ALG=PER_OP`. Non-PER_OP algorithms don't compile any hook file.
+Binaries: `rundb_per_op_{noop,2pl,occ,mvcc}_{ycsb,tpcc}`.
 
-## Key Design Decisions
+## Design Decisions
 
-### D1: Opaque `void* cc_row_state` for ALL algorithms
-Replaced all typed `Row_*` manager pointers in `row.h` with a single `void* cc_row_state`. Each CC algorithm casts via a file-local `cc_mgr()` helper. Makes `row.h` completely CC-neutral.
+**D1: Opaque `void* cc_row_state`** — replaces all typed `Row_*` manager pointers. Each CC algorithm casts via file-local `cc_mgr()` helpers. Makes `row.h` CC-neutral.
 
-### D2: `void* cc_txn_state` on txn_man
-Under `#if CC_ALG == PER_OP`, provides opaque per-transaction state. Hook manages lifecycle via `cc_pre_txn` (allocate) and `cc_post_txn` (free).
+**D2: `void* cc_txn_state` via `TxnExtra<PerOp>`** — opaque per-txn state. Hook manages lifecycle via `cc_pre_txn` (allocate) / `cc_post_txn` (free).
 
-### D3: cc_post_op owns the copy decision
-The copy/snapshot strategy is entirely in cc_post_op. 2PL: noop (write in-place under lock). OCC: allocate copy, record observed wts. Infrastructure doesn't pre-allocate `data` or `orig_data` for PER_OP.
+**D3: cc_post_op owns the copy decision** — infrastructure doesn't pre-allocate `data` for PER_OP. The hook decides whether to work in-place (2PL) or allocate a copy (OCC).
 
-### D4: `op_idx` = running `get_row()` call counter
-Passed through `txn_man::get_row(row, type, op_idx)` → `row_t::get_row(type, txn, row, op_idx)`. Default `-1` for callers that don't track it (test_txn.cpp, tpcc_txn.cpp).
+**D4: `op_idx` parameter** — passed through `txn_man::get_row()` → `row_t::get_row()` → `return_row()`. Default `-1` for callers that don't track it.
 
-### D5: ycsb_txn.cpp is zero-hook, zero-macro
-No `#include "cc_hooks.h"`, no CC_ALG macros, no hook calls. Just `get_row(row, type, op_cnt)` and `finish(rc)`. The only preprocessor directive is `#if INDEX_STRUCT == IDX_BTREE`.
+**D5: No noop fallback** — hook call sites are all constexpr-guarded. Non-PER_OP binaries never reference hook symbols.
 
-### D6: No noop fallback
-Hook call sites are all `#if CC_ALG == PER_OP` guarded. Non-PER_OP algorithms never reference hook symbols. No noop definitions needed.
+**D6: Workload files are hook-free** — `ycsb_txn.cpp` and `tpcc_txn.cpp` have no `#include "cc_hooks.h"`, no CC macros, no hook calls. Just `get_row()` and `finish()`.
+
+## Files Shown to CC Generator
+
+The LLM sees only these files (all CC-neutral):
+1. `cc_hooks.h` — hook interface + documented `txn_man`/`row_t` API
+2. `row.h` — row struct (just `void* cc_row_state`, no CC types)
+3. `ycsb_txn.cpp` / `tpcc_txn.cpp` — transaction logic
+
+The generator does NOT see `txn.h` (contains CC-specific `TxnExtra`/`AccessExtra` specializations for baseline algorithms).
 
 ## Limitations
 
-1. **TEST workload incompatible**: Calls `txn_man::get_row()` directly from `test_txn.cpp`, bypassing `cc_pre_op` in `row_t::get_row()`. Skipped in build (CMake) and test (test.py).
+1. **TEST workload incompatible** — calls `txn_man::get_row()` directly, bypassing `cc_pre_op`. Skipped in build and test.
 
-2. **MVCC TPCC too slow**: Heavy per-row version history init (`_mm_malloc` per row × millions of TPCC rows). Skipped in test.py.
+2. **MVCC TPCC too slow** — heavy per-row version history init. Skipped in test.py.
 
-3. **MVCC simplified WAIT**: Aborts instead of spinning on pending prewrites. Works for low-contention YCSB but may cause liveness issues under high write contention.
+3. **MVCC simplified WAIT** — aborts instead of spinning on pending prewrites.
 
-4. **HSTORE incompatibility**: Partition-level locks don't fit the per-row hook model.
+4. **NOOP infrastructure overhead** — `rdtsc` × 2 per access (stats timing), access array population, cleanup loop iteration. Could be eliminated with PER_OP-specific early-returns but would break design consistency.
 
-5. **OCC sort reorders accesses[]**: `cc_pre_commit` sorts by key order, shifting op_idx-keyed parallel arrays. OCC hooks swap `observed_wts[]` in sync.
+## Configurable Conflict-Free TPC-C
 
-6. **NOOP still has non-trivial infrastructure overhead** compared to HSTORE (which early-returns from `get_row()` and `cleanup()`). PER_OP NOOP still pays:
-   - `rdtsc` × 2 per access in `txn_man::get_row()` (stats timing, ~30-50ns each)
-   - Access array population (`type`, `orig_row`) per access
-   - Cleanup loop iterating all accesses, calling `return_row` → `cc_release_op` (noop) per access
-   - `rdtsc` × 2 per transaction in `finish()`
-   These could be eliminated with PER_OP-specific early-returns in `get_row()` and `cleanup()`, but that would re-introduce the bypass logic we removed for design consistency.
+Runtime flags for disabling cross-warehouse accesses:
+- `-Tr FLOAT` — remote customer % in Payment (default 15, TPC-C spec)
+- `-Ts FLOAT` — remote supply warehouse % in New-Order (default 1, TPC-C spec)
 
-## Workflow for LLM Generation
-
-1. Show LLM: `cc_hooks.h` (interface), `ycsb_txn.cpp` (transaction logic), `row.h` (row struct)
-2. LLM generates a new `cc_hooks_<variant>.cpp`
-3. Add variant to `DBX_PER_OP_VARIANTS` in `CMakeLists.txt`, rebuild, run
-4. Compare against baselines
+Conflict-free recipe: `./rundb_per_op_noop_tpcc -t N -n N -Tr0 -Ts0`
