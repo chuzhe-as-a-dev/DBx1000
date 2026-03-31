@@ -72,6 +72,42 @@ The generator does NOT see `txn.h` (contains CC-specific `TxnExtra`/`AccessExtra
 
 4. **NOOP infrastructure overhead** — `rdtsc` × 2 per access (stats timing), access array population, cleanup loop iteration. Could be eliminated with PER_OP-specific early-returns but would break design consistency.
 
+## per_op_occ vs Silo Performance Gap
+
+The `per_op_occ` hook implements backward validation structurally similar to
+Silo (compare observed row version at commit time), but is ~1.5–1.8× slower
+across all thread counts (measured 2026-03-30, TPCC, 1–48 threads).
+
+Root causes (in rough order of impact):
+
+1. **Mutex on every read** — `cc_pre_op` and `cc_post_op` each take
+   `pthread_mutex_lock` on the row's latch just to read `wts`. Silo uses a
+   lock-free read protocol: load TID word → copy row → re-load TID word →
+   retry if changed. No atomic RMW, no syscall.
+
+2. **Latch ALL rows at commit** — `cc_pre_commit` latches every accessed row
+   (reads + writes) for validation. Silo only locks the **write set**;
+   read-set rows are validated lock-free (check TID unchanged, lock bit clear).
+
+3. **Global `get_ts()` at commit** — calls `glob_manager->get_ts()` twice per
+   txn (start + commit). This is a global atomic counter → serialization
+   bottleneck. Silo computes `_cur_tid` locally as `max(observed TIDs) + 1` —
+   no global coordination. Visible in benchmarks: `time_ts_alloc` is ~1.5 s at
+   48 threads for per_op_occ vs 0 for Silo.
+
+4. **malloc/free per access** — `cc_post_op` calls `_mm_malloc` + `row_t::init()`
+   for every row access to create a private copy. Silo reuses pre-allocated
+   `accesses[]` buffers.
+
+5. **No lock-free TID encoding** — Silo packs a lock bit into `_tid_word`,
+   enabling concurrent-writer detection without a mutex. per_op_occ has no
+   equivalent; it must hold a mutex to safely read `wts`.
+
+These are not bugs — the per_op_occ hook is intentionally a straightforward
+textbook-style OCC. Closing the gap would require adopting Silo's lock-free
+read protocol and write-set-only locking, which would essentially reimplement
+Silo inside the hook framework.
+
 ## Configurable Conflict-Free TPC-C
 
 Runtime flags for disabling cross-warehouse accesses:
