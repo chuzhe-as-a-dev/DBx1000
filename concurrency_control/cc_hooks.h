@@ -8,6 +8,29 @@ class thread_t;
 class base_query;
 #include "global.h"  // RC, access_t, idx_key_t, etc.
 
+// ---- txn_man fields available to hook implementations -------------------
+// (Hook .cpp files #include "txn.h" for full access; this documents the
+// contract so the generator doesn't need to read txn.h directly.)
+//
+//   txn->cc_txn_state      void*    — opaque per-txn state; hook owns lifecycle
+//   txn->accesses[i]       Access*  — per-access record:
+//     ->type                access_t — RD, WR, SCAN
+//     ->orig_row            row_t*   — the original row
+//     ->data                row_t*   — working copy (set by row_t::get_row,
+//                                      updatable by cc_post_op)
+//     ->orig_data           row_t*   — pre-image for rollback (hook may use)
+//   txn->row_cnt            int      — number of accesses recorded so far
+//   txn->wr_cnt             int      — number of write accesses
+//   txn->get_thd_id()       uint64_t — thread ID
+//   txn->get_ts() / set_ts() ts_t   — transaction timestamp
+//
+// row_t fields:
+//   row->cc_row_state       void*    — opaque per-row state; hook owns lifecycle
+//   row->get_data()         char*    — row data buffer
+//   row->get_table()        table_t* — table metadata
+//   row->get_part_id()      uint64_t — partition ID
+//   row->copy(src)          void     — copy data from src row
+
 // ---- Per-row CC state lifecycle ----------------------------------------
 // Called from row_t::init_manager() and row free respectively.
 // cc_row_state is a void* in row_t that the hook manages entirely.

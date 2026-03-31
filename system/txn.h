@@ -104,6 +104,10 @@ template <>
 struct TxnExtra<CCAlg::Vll> {
   TxnType vll_txn_type;
 };
+template <>
+struct TxnExtra<CCAlg::PerOp> {
+  void* cc_txn_state = nullptr;
+};
 
 class txn_man : public TxnExtra<cc_alg> {
  public:
@@ -133,9 +137,6 @@ class txn_man : public TxnExtra<cc_alg> {
 #endif
 
   int row_cnt;
-#if CC_ALG == PER_OP
-  void* cc_txn_state;  // LLM-managed per-transaction CC state
-#endif
   int wr_cnt;
   Access** accesses;
   int num_accesses_alloc;
