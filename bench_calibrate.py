@@ -7,7 +7,7 @@ configuration multiple times, and reports throughput mean/CV per setting.
 Usage:
   python3 bench_calibrate.py --alg no_wait --threads 8 --runs 5
   python3 bench_calibrate.py --alg no_wait --threads 8 --runs 5 --warmup 10000
-  python3 bench_calibrate.py --alg per_op_2pl --threads 8 --runs 5 \
+  python3 bench_calibrate.py --alg per_op_no_wait --threads 8 --runs 5 \
       --txn-values 10000,50000,100000,200000,500000
 """
 

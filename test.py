@@ -12,7 +12,7 @@ workloads = ['YCSB', 'TPCC', 'TEST']
 # TEST workload is skipped: it calls txn_man::get_row() directly, bypassing
 # cc_pre_op/cc_post_op hooks. See NOTES.md for details.
 # MVCC TPCC is skipped: heavy per-row version history init makes TPCC too slow.
-per_op_variants = ['NOOP', '2PL', 'OCC', 'MVCC']
+per_op_variants = ['NOOP', 'NO_WAIT', 'OCC', 'MVCC']
 per_op_workloads = ['YCSB', 'TPCC']
 per_op_skip = {'MVCC': {'TPCC'}}
 

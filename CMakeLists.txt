@@ -57,7 +57,7 @@ set(DBX_ALGS "DL_DETECT;NO_WAIT;HEKATON;SILO;TICTOC;PER_OP")
 set(DBX_WORKLOADS "YCSB;TPCC;TEST")
 
 # PER_OP hook variants — each links a different cc_hooks_*.cpp
-set(DBX_PER_OP_VARIANTS "NOOP;2PL;OCC;MVCC")
+set(DBX_PER_OP_VARIANTS "NOOP;NO_WAIT;OCC;MVCC")
 
 # Root-level common OBJECT lib
 add_library(config_common OBJECT config.cpp)

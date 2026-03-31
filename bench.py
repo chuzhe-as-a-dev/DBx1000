@@ -20,7 +20,7 @@ import argparse, csv, datetime, os, re, subprocess, sys
 
 DEFAULT_ALGS = [
     'per_op_noop',   # zero CC overhead (upper bound)
-    'per_op_2pl',    # hook-based NO_WAIT 2PL
+    'per_op_no_wait', # hook-based NO_WAIT 2PL
     'per_op_occ',    # hook-based OCC
     'no_wait',       # baseline NO_WAIT 2PL
     'tictoc',        # baseline TicToc

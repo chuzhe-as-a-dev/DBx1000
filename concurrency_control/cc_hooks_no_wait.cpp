@@ -1,4 +1,4 @@
-// cc_hooks_2pl.cpp — NO_WAIT 2PL implementation of the cc_hooks interface.
+// cc_hooks_no_wait.cpp — NO_WAIT 2PL implementation of the cc_hooks interface.
 //
 // Per-row state: pthread_rwlock (SH for reads, EX for writes) + version counter.
 // cc_pre_op: tryrdlock for RD/SCAN, trywrlock for WR. Abort on contention.

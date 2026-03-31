@@ -33,7 +33,7 @@ Four variants, each in `concurrency_control/cc_hooks_*.cpp`:
 | Variant | File | Description |
 |---------|------|-------------|
 | NOOP | `cc_hooks_noop.cpp` | Zero CC overhead; performance upper bound |
-| 2PL | `cc_hooks_2pl.cpp` | NO_WAIT 2PL with `pthread_rwlock` (SH/EX) |
+| NO_WAIT | `cc_hooks_no_wait.cpp` | NO_WAIT 2PL with `pthread_rwlock` (SH/EX) |
 | OCC | `cc_hooks_occ.cpp` | Per-row OCC validation (sort + latch + validate + install) |
 | MVCC | `cc_hooks_mvcc.cpp` | Version history with simple GC (prototype) |
 
