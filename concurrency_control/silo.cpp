@@ -2,7 +2,6 @@
 #include "row_silo.h"
 #include "txn.h"
 
-#if CC_ALG == SILO
 static inline Row_silo* cc_mgr(row_t* r) { return (Row_silo*)r->cc_row_state; }
 
 RC txn_man::validate_silo() {
@@ -143,4 +142,3 @@ final:
   }
   return rc;
 }
-#endif

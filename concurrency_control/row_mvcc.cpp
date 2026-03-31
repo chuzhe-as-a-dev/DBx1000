@@ -8,8 +8,6 @@
 #include "row.h"
 #include "txn.h"
 
-#if CC_ALG == MVCC
-
 void Row_mvcc::init(row_t* row) {
   _row = row;
   _his_len = 4;
@@ -353,5 +351,3 @@ void Row_mvcc::update_buffer(txn_man* txn, TsType type) {
     }
   }
 }
-
-#endif

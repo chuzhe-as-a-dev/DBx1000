@@ -3,7 +3,6 @@
 #include "row_tictoc.h"
 #include "txn.h"
 
-#if CC_ALG == TICTOC
 static inline Row_tictoc* cc_mgr(row_t* r) {
   return (Row_tictoc*)r->cc_row_state;
 }
@@ -259,4 +258,3 @@ void txn_man::update_max_wts(ts_t max_wts) {
   assert(false);
   if (max_wts > _max_wts) _max_wts = max_wts;
 }
-#endif

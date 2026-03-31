@@ -3,7 +3,6 @@
 #include "row_hekaton.h"
 #include "txn.h"
 
-#if CC_ALG == HEKATON
 static inline Row_hekaton* cc_mgr(row_t* r) {
   return (Row_hekaton*)r->cc_row_state;
 }
@@ -30,5 +29,3 @@ RC txn_man::validate_hekaton(RC rc) {
   }
   return rc;
 }
-
-#endif

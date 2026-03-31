@@ -7,8 +7,6 @@
 #include "row.h"
 #include "txn.h"
 
-#if CC_ALG == HEKATON
-
 void Row_hekaton::init(row_t* row) {
   _table = row->table;
   _his_len = 4;
@@ -199,5 +197,3 @@ void Row_hekaton::post_process(txn_man* txn, ts_t commit_ts, RC rc) {
 
   blatch = false;
 }
-
-#endif

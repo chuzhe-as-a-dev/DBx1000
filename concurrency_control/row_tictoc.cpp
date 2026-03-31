@@ -6,8 +6,6 @@
 #include "row.h"
 #include "txn.h"
 
-#if CC_ALG == TICTOC
-
 void Row_tictoc::init(row_t* row) {
   _row = row;
 #if ATOMIC_WORD
@@ -248,5 +246,3 @@ void Row_tictoc::release() {
   pthread_mutex_unlock(_latch);
 #endif
 }
-
-#endif

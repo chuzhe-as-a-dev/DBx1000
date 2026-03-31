@@ -4,8 +4,6 @@
 #include "row.h"
 #include "txn.h"
 
-#if CC_ALG == SILO
-
 void Row_silo::init(row_t* row) {
   _row = row;
 #if ATOMIC_WORD
@@ -124,5 +122,3 @@ uint64_t Row_silo::get_tid() {
   assert(ATOMIC_WORD);
   return _tid_word & (~LOCK_BIT);
 }
-
-#endif

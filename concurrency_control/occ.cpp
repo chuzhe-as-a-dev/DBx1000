@@ -8,9 +8,7 @@
 #include "row_occ.h"
 #include "txn.h"
 
-#if CC_ALG == OCC
 static inline Row_occ* cc_mgr(row_t* r) { return (Row_occ*)r->cc_row_state; }
-#endif
 
 set_ent::set_ent() {
   set_size = 0;
@@ -39,7 +37,6 @@ RC OptCC::validate(txn_man* txn) {
 
 RC OptCC::per_row_validate(txn_man* txn) {
   RC rc = RCOK;
-#if CC_ALG == OCC
   // sort all rows accessed in primary key order.
   // TODO for migration, should first sort by partition id
   for (int i = txn->row_cnt - 1; i > 0; i--) {
@@ -89,7 +86,6 @@ RC OptCC::per_row_validate(txn_man* txn) {
 
   for (int i = 0; i < lock_cnt; i++)
     cc_mgr(txn->accesses[i]->orig_row)->release();
-#endif
   return rc;
 }
 

@@ -9,7 +9,6 @@
 #include "wl.h"
 #include "ycsb.h"
 #include "ycsb_query.h"
-#if CC_ALG == VLL
 static inline Row_vll* cc_mgr(row_t* r) { return (Row_vll*)r->cc_row_state; }
 
 void VLLMan::init() {
@@ -151,5 +150,3 @@ TxnQEntry* VLLMan::getQEntry() {
 void VLLMan::returnQEntry(TxnQEntry* entry) {
   mem_allocator.free(entry, sizeof(TxnQEntry));
 }
-
-#endif
