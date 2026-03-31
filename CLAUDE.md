@@ -73,15 +73,25 @@ DBx1000 is an in-memory OLTP database benchmark for evaluating concurrency contr
 - **`row_t`** ([storage/row.h](storage/row.h)) — a database row; contains `void* cc_row_state` (opaque per-row CC state, cast by each algorithm's `cc_mgr()` helper)
 - **`Row_*` managers** ([concurrency_control/row_*.h](concurrency_control/)) — per-row CC state; one class per algorithm (e.g. `Row_tictoc`, `Row_lock`, `Row_mvcc`). Accessed via `cc_mgr(row)` cast helpers, not directly through `row_t`.
 
-### CC algorithm selection
+### CC algorithm selection and compile-time dispatch
 
-The CC algorithm is chosen entirely at compile time via `CC_ALG`. The `row_t::cc_row_state` cast helpers, the validation logic in `txn_man`, and the global manager (if any) are all `#if CC_ALG == ...` guarded. Adding a new baseline algorithm requires touching `row.cpp`, `txn.h`, `txn.cpp`, and creating a new `row_<alg>.h/.cpp` pair. For PER_OP, just add a new `cc_hooks_<variant>.cpp` and register it in `DBX_PER_OP_VARIANTS`.
+The CC algorithm is chosen at compile time via `CC_ALG`. The codebase uses C++23 `enum class CCAlg` and `inline constexpr CCAlg cc_alg` (defined in `config.h`) to dispatch via `if constexpr` instead of preprocessor `#if` guards. Key patterns:
 
-### Critical build constraint: CC_ALG affects txn_man struct layout
+- **`if constexpr (cc_alg == CCAlg::Tictoc)`** — used for behavioral dispatch in function bodies (txn.cpp, thread.cpp, main.cpp, etc.)
+- **Template lambdas** `[&]<CCAlg A = cc_alg>() { ... }()` — used in `row.cpp` and `txn.cpp` where branches call different manager APIs (e.g. `lock_get` vs `access`). The template parameter makes names dependent so false branches are properly discarded.
+- **`TxnExtra<CCAlg>` / `AccessExtra<CCAlg>`** — template-specialized structs that hold per-algorithm fields (e.g. `lock_ready` for lock-based, `_max_wts` for TICTOC). `txn_man` and `Access` inherit from these.
+- **`RowManagerType<CCAlg>`** — type trait in `row.cpp` mapping algorithm → `Row_*` class, used to cast `void* cc_row_state` to the correct typed pointer inside template lambdas.
+- **`row_t::cc_row_state`** — opaque `void*` per-row CC state. CC-neutral; each algorithm casts it to its `Row_*` type.
 
-Some CC algorithms add conditional fields to `txn_man` (e.g. HEKATON adds `void * volatile history_entry`). This shifts the offsets of all subsequent members. Any source file that includes `txn.h` — directly or indirectly — **must** be compiled with the correct `CC_ALG` definition, or struct member accesses will silently hit wrong offsets (ODR violation → memory corruption).
+The old integer `#define` macros (`#define TICTOC 8`, etc.) remain in `config.h` for backward compatibility with CC implementation files that still use `#if CC_ALG == ...`.
 
-This is why the CMake build compiles all benchmark files (`*_txn.cpp`, `*_wl.cpp`) as per-algorithm OBJECT libraries (`benchmarks_${wl}_${alg}`) with both `CC_ALG` and `WORKLOAD` defined. Do not move workload source files into a shared library that lacks `CC_ALG`.
+Adding a new baseline algorithm requires touching `row.cpp`, `txn.h`, `txn.cpp`, and creating a new `row_<alg>.h/.cpp` pair. For PER_OP, just add a new `cc_hooks_<variant>.cpp` and register it in `DBX_PER_OP_VARIANTS`.
+
+### Build constraint: CC_ALG affects txn_man struct layout
+
+Different CC algorithms add different fields to `txn_man` via `TxnExtra<CCAlg>` template specialization (e.g. HEKATON adds `void * volatile history_entry`, TICTOC adds `_max_wts`, lock-based adds `lock_ready`). This shifts the offsets of all subsequent members. Any source file that includes `txn.h` — directly or indirectly — **must** be compiled with the correct `CC_ALG` definition, or struct member accesses will silently hit wrong offsets (ODR violation → memory corruption).
+
+This is why the CMake build compiles benchmark files, system files, storage files, and CC files as per-algorithm OBJECT libraries with `CC_ALG` defined. Only truly CC-independent files (`helper.cpp`, `parser.cpp`, `stats.cpp`, `mem_alloc.cpp`, `catalog.cpp`, `table.cpp`, index files) are in shared `_common` libraries.
 
 ### Directory structure
 

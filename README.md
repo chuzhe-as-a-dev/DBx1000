@@ -2,7 +2,7 @@
 
 -----------------
 
-DBx1000 is a single-node in-memory OLTP database benchmark for evaluating concurrency control (CC) algorithms at high thread counts. It implements 11 CC algorithms and two workloads (YCSB and TPC-C).
+DBx1000 is a single-node in-memory OLTP database benchmark for evaluating concurrency control (CC) algorithms at high thread counts. It implements 11 built-in CC algorithms, a pluggable PER_OP hook framework, and two workloads (YCSB and TPC-C).
 
 The original concurrency control scalability study is described in:
 
@@ -11,7 +11,7 @@ The original concurrency control scalability study is described in:
 Build
 -----
 
-Requires CMake 3.16+ and a C++11 compiler.
+Requires CMake 3.16+ and a C++23 compiler (GCC 11+ or Clang 16+).
 
 ```bash
 cmake -S . -B build
@@ -28,7 +28,9 @@ For example: `build/rundb_tictoc_ycsb`, `build/rundb_hekaton_tpcc`.
 
 To change which algorithms or workloads are compiled, edit `DBX_ALGS` / `DBX_WORKLOADS` in `CMakeLists.txt`. Supported values:
 
-- **CC algorithms**: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`
+- **CC algorithms**: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`, `PER_OP`
+  > **Note:** The TicToc paper [2] only evaluated `DL_DETECT`, `NO_WAIT`, `HEKATON`, `SILO`, and `TICTOC`. The remaining built-in algorithms (`WAIT_DIE`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `VLL`) may not be fully functional.
+- **PER_OP variants**: `NOOP`, `2PL`, `OCC`, `MVCC` (edit `DBX_PER_OP_VARIANTS` in `CMakeLists.txt`)
 - **Workloads**: `YCSB`, `TPCC`, `TEST`
 
 Test
