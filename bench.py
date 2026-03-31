@@ -28,6 +28,8 @@ DEFAULT_ALGS = [
 ]
 
 CSV_FIELDS = [
+    # Provenance
+    'result_dir',
     # Input parameters
     'algorithm', 'threads', 'run',
     'max_txn_per_part', 'warmup', 'warehouses', 'perc_remote_pay', 'perc_remote_neworder',
@@ -216,6 +218,7 @@ def main():
 
                 n_wh = threads if args.warehouses == 0 else args.warehouses
                 row = {
+                    'result_dir': timestamp,
                     'algorithm': alg,
                     'threads': threads,
                     'run': run + 1,
