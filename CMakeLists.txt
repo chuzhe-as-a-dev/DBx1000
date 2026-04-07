@@ -57,7 +57,7 @@ set(DBX_ALGS "DL_DETECT;NO_WAIT;HEKATON;SILO;TICTOC;PER_OP")
 set(DBX_WORKLOADS "YCSB;TPCC;TEST")
 
 # PER_OP hook variants — each links a different cc_hooks_*.cpp
-set(DBX_PER_OP_VARIANTS "NOOP;NO_WAIT;OCC;MVCC")
+set(DBX_PER_OP_VARIANTS "NOOP;NO_WAIT;OCC;MVCC;PJ_TPCC_4WH")
 
 # Root-level common OBJECT lib
 add_library(config_common OBJECT config.cpp)
@@ -119,13 +119,20 @@ foreach(variant IN LISTS DBX_PER_OP_VARIANTS)
         string(TOLOWER "${wl}" wl_lower)
         set(target "rundb_per_op_${var_lower}_${wl_lower}")
 
+        # PJ variants use a Polyjuice-ordered TPCC implementation.
+        if(var_lower MATCHES "^pj_" AND wl STREQUAL "TPCC")
+            set(_bench_objs $<TARGET_OBJECTS:benchmarks_tpcc_per_op_pj>)
+        else()
+            set(_bench_objs $<TARGET_OBJECTS:benchmarks_${wl_lower}_per_op>)
+        endif()
+
         add_executable(${target}
             $<TARGET_OBJECTS:config_common>
             $<TARGET_OBJECTS:benchmarks_common>
             $<TARGET_OBJECTS:storage_common>
             $<TARGET_OBJECTS:system_common>
             $<TARGET_OBJECTS:cc_per_op_${var_lower}>
-            $<TARGET_OBJECTS:benchmarks_${wl_lower}_per_op>
+            ${_bench_objs}
             $<TARGET_OBJECTS:storage_per_op>
             $<TARGET_OBJECTS:system_per_op_${wl_lower}>
         )

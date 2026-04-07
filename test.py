@@ -12,9 +12,9 @@ workloads = ['YCSB', 'TPCC', 'TEST']
 # TEST workload is skipped: it calls txn_man::get_row() directly, bypassing
 # cc_pre_op/cc_post_op hooks. See NOTES.md for details.
 # MVCC TPCC is skipped: heavy per-row version history init makes TPCC too slow.
-per_op_variants = ['NOOP', 'NO_WAIT', 'OCC', 'MVCC']
+per_op_variants = ['NOOP', 'NO_WAIT', 'OCC', 'MVCC', 'PJ_TPCC_4WH']
 per_op_workloads = ['YCSB', 'TPCC']
-per_op_skip = {'MVCC': {'TPCC'}}
+per_op_skip = {'MVCC': {'TPCC'}, 'PJ_TPCC_4WH': {'YCSB'}}
 
 
 def build_all():
@@ -33,7 +33,7 @@ def build_all():
     print("PASS Build\t\tall variants")
 
 
-def test_run(binary, alg, workload, test=''):
+def test_run(binary, alg, workload, test='', timeout_sec=10):
     app_flags = ""
     if test == 'read_write':
         app_flags = "-Ar -t1"
@@ -43,7 +43,7 @@ def test_run(binary, alg, workload, test=''):
     cmd = "%s %s" % (binary, app_flags)
     start = datetime.datetime.now()
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-    timeout = 10
+    timeout = timeout_sec
     while process.poll() is None:
         time.sleep(1)
         if (datetime.datetime.now() - start).seconds > timeout:

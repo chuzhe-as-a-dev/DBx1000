@@ -24,3 +24,11 @@ foreach(alg IN LISTS DBX_ALGS)
         target_compile_definitions(benchmarks_${wl_lower}_${alg_lower} PRIVATE CC_ALG=${alg} WORKLOAD=${wl})
     endforeach()
 endforeach()
+
+# Polyjuice-ordered TPCC variant: uses tpcc_txn_pj.cpp instead of tpcc_txn.cpp
+# to match the operation order that Polyjuice's learned policy was trained against.
+add_library(benchmarks_tpcc_per_op_pj OBJECT
+    tpcc_query.cpp tpcc_txn_pj.cpp tpcc_wl.cpp)
+target_link_libraries(benchmarks_tpcc_per_op_pj PRIVATE dbx_includes)
+target_compile_definitions(benchmarks_tpcc_per_op_pj PRIVATE
+    CC_ALG=PER_OP WORKLOAD=TPCC)
