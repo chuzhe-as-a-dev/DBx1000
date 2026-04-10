@@ -200,10 +200,10 @@ struct WriteEntry {
 struct TxnManState {
   // -- Per-txn fields (reset each transaction) --
   TpccTxnType txn_type;
-  int ol_cnt;                    // order-line count (new_order only)
-  volatile int step;             // current progress for wait tracking
+  int ol_cnt;         // order-line count (new_order only)
+  volatile int step;  // current progress for wait tracking
   volatile TxnStatus status;
-  uint64_t commit_tid;           // Silo-style TID computed at validation
+  uint64_t commit_tid;  // Silo-style TID computed at validation
   Dependency deps[MAX_DEPS];
   int dep_count;
   ReadEntry reads[MAX_ACCESSES];
@@ -212,7 +212,7 @@ struct TxnManState {
   int write_count;
   int piece_read_start;       // read_count at start of current piece
   int piece_write_start;      // write_count at start of current piece
-  bool pending_piece_commit;  // early-validation pending before next op
+  bool pending_piece_validation;  // early-validation pending before next op
 
   // -- Persistent fields (survive across transactions) --
   // Monotonically increasing id, incremented each cc_pre_txn. Used by
@@ -650,7 +650,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   ts->write_count = 0;
   ts->piece_read_start = 0;
   ts->piece_write_start = 0;
-  ts->pending_piece_commit = false;
+  ts->pending_piece_validation = false;
 }
 
 void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
@@ -682,8 +682,8 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   TxnManState* ts = (TxnManState*)txn->cc_txn_state;
   RowState* rs = (RowState*)orig->cc_row_state;
   // If previous access had early_validation, do piece validation now
-  if (ts->pending_piece_commit) {
-    ts->pending_piece_commit = false;
+  if (ts->pending_piece_validation) {
+    ts->pending_piece_validation = false;
     if (piece_validate_and_expose(txn, ts) != RCOK) {
       ts->status = TXN_ABORTED;
       return Abort;
@@ -802,7 +802,7 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
     }
   }
   if (policy->early_validation) {
-    ts->pending_piece_commit = true;
+    ts->pending_piece_validation = true;
   }
 }
 
@@ -812,8 +812,8 @@ RC cc_pre_commit(txn_man* txn) {
     return Abort;
   }
   // Flush any pending piece validation
-  if (ts->pending_piece_commit) {
-    ts->pending_piece_commit = false;
+  if (ts->pending_piece_validation) {
+    ts->pending_piece_validation = false;
     if (piece_validate_and_expose(txn, ts) != RCOK) {
       return Abort;
     }
