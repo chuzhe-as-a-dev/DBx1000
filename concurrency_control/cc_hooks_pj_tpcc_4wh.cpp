@@ -174,14 +174,14 @@ static inline void spin_lock(RowState* s) {
 static inline void unlock(RowState* s) { s->tid_word &= ~LOCK_BIT; }
 
 // ---- Per-txn state ----
-// TxnState is allocated once per txn_man (on first use) and reused across
+// TxnManState is allocated once per txn_man (on first use) and reused across
 // transactions. Per-txn fields are reset in cc_pre_txn; persistent fields
 // (txn_id, history ring buffer) survive across transactions for dependency
 // resolution.
 enum TxnStatus { TXN_RUNNING = 0, TXN_COMMITTED = 1, TXN_ABORTED = 2 };
 struct Dependency {
   txn_man* writer;
-  uint64_t txn_id;  // writer's TxnState::txn_id when dependency was created
+  uint64_t txn_id;  // writer's TxnManState::txn_id when dependency was created
   bool from_dirty_read;
 };
 struct ReadEntry {
@@ -196,7 +196,7 @@ struct WriteEntry {
   bool exposed;      // true if dirty data has been exposed via early-validation
 };
 #define MAX_ACCESSES 64
-struct TxnState {
+struct TxnManState {
   // -- Per-txn fields (reset each transaction) --
   TpccTxnType txn_type;
   int ol_cnt;           // order-line count (new_order only, for lookup_policy)
@@ -228,30 +228,32 @@ struct TxnState {
   int history_head = 0;
 };
 
-// Helper to get the TxnState from a txn_man (may be null for non-PJ txns).
-static inline TxnState* get_txn_state(txn_man* tx) {
-  return (TxnState*)tx->cc_txn_state;
+// Helper to get the TxnManState from a txn_man (may be null for non-PJ txns).
+static inline TxnManState* get_txn_state(txn_man* tx) {
+  return (TxnManState*)tx->cc_txn_state;
 }
 
 // ---- Dependency resolution helpers ----
 
 // Publish a completed txn's outcome to the ring buffer (seqlock protocol).
-static inline void publish_txn_result(TxnState* ts, int status) {
+static inline void publish_txn_result(TxnManState* ts, int status) {
   int slot = ts->history_head;
-  ts->history[slot].txn_id = TxnState::HISTORY_UPDATING;
+  ts->history[slot].txn_id = TxnManState::HISTORY_UPDATING;
   COMPILER_BARRIER
   ts->history[slot].status = status;
   COMPILER_BARRIER
   ts->history[slot].txn_id = ts->txn_id;
-  ts->history_head = (slot + 1) % TxnState::HISTORY_SIZE;
+  ts->history_head = (slot + 1) % TxnManState::HISTORY_SIZE;
 }
 
 // Look up a txn's outcome in the writer's ring buffer.
-static inline bool lookup_txn_result(TxnState* writer_ts, uint64_t txn_id,
+static inline bool lookup_txn_result(TxnManState* writer_ts, uint64_t txn_id,
                                      int* status) {
-  for (int i = 0; i < TxnState::HISTORY_SIZE; i++) {
+  for (int i = 0; i < TxnManState::HISTORY_SIZE; i++) {
     uint64_t id1 = writer_ts->history[i].txn_id;
-    if (id1 == TxnState::HISTORY_UPDATING || id1 != txn_id) continue;
+    if (id1 == TxnManState::HISTORY_UPDATING || id1 != txn_id) {
+      continue;
+    }
     COMPILER_BARRIER
     int s = writer_ts->history[i].status;
     COMPILER_BARRIER
@@ -266,7 +268,7 @@ static inline bool lookup_txn_result(TxnState* writer_ts, uint64_t txn_id,
 
 // Add a dependency, deduplicating by (writer, txn_id). If an existing dep
 // with from_dirty_read=false is found and the new one is true, upgrade it.
-static inline void add_dependency(TxnState* ts, txn_man* writer,
+static inline void add_dependency(TxnManState* ts, txn_man* writer,
                                   uint64_t txn_id, bool from_dirty_read) {
   for (int i = 0; i < ts->dep_count; i++) {
     if (ts->deps[i].writer == writer && ts->deps[i].txn_id == txn_id) {
@@ -288,27 +290,33 @@ static inline void add_dependency(TxnState* ts, txn_man* writer,
 //   TXN_ABORTED   — aborted
 //   -1            — finished but status unknown (evicted from ring buffer)
 static inline int check_dep_status(Dependency* dep) {
-  TxnState* ws = get_txn_state(dep->writer);
-  if (!ws) return -1;
+  TxnManState* ws = get_txn_state(dep->writer);
+  if (!ws) {
+    return -1;
+  }
   // Fast path: writer still on the same txn — read status directly.
-  if (ws->txn_id == dep->txn_id) return ws->status;
+  if (ws->txn_id == dep->txn_id) {
+    return ws->status;
+  }
   // Writer moved on. Look up result in ring buffer.
   int status;
-  if (lookup_txn_result(ws, dep->txn_id, &status)) return status;
+  if (lookup_txn_result(ws, dep->txn_id, &status)) {
+    return status;
+  }
   // Evicted — status unknown.
   return -1;
 }
 
 // ---- Wait ----
 static const uint64_t WAIT_TIMEOUT = 100000;
-static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
+static RC do_wait(TxnManState* txn_state, const PolicyEntry* policy) {
   // Wait values come from the policy entry. Per §4.2, if the previous access
   // had early_validation set, this entry's wait values serve as the
   // pre-validation wait (consolidated with the pre-access wait).
   for (int d = 0; d < txn_state->dep_count; d++) {
     Dependency* dep = &txn_state->deps[d];
     // Determine wait target based on dep's txn type. We need the dep's
-    // TxnState to know its type. If the dep already finished, skip.
+    // TxnManState to know its type. If the dep already finished, skip.
     int s = check_dep_status(dep);
     if (s != TXN_RUNNING) {
       if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read) {
@@ -316,7 +324,7 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
       }
       continue;
     }
-    TxnState* dep_state = (TxnState*)dep->writer->cc_txn_state;
+    TxnManState* dep_state = (TxnManState*)dep->writer->cc_txn_state;
     if (!dep_state) {
       continue;
     }
@@ -339,7 +347,7 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
         }
         break;
       }
-      dep_state = (TxnState*)dep->writer->cc_txn_state;
+      dep_state = (TxnManState*)dep->writer->cc_txn_state;
       if (!dep_state) {
         break;
       }
@@ -360,7 +368,7 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
 // exposes dirty data so other txns can dirty-read it.
 // Per §4.2: "we defer appending reads and visible-writes to their
 // corresponding access lists until a successful early-validation."
-static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
+static RC piece_validate_and_expose(txn_man* txn, TxnManState* txn_state) {
   int pr = txn_state->piece_read_start;
   int pre = txn_state->read_count;
   int pw = txn_state->piece_write_start;
@@ -478,7 +486,7 @@ static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
 }
 
 // ---- Final commit: validate ALL + copy local→orig atomically ----
-static RC final_commit(txn_man* txn, TxnState* txn_state) {
+static RC final_commit(txn_man* txn, TxnManState* txn_state) {
   // Lock all write rows
   int locked = 0;
   for (int i = 0; i < txn_state->write_count; i++) {
@@ -622,11 +630,11 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
       PAUSE
     }
   }
-  // Reuse TxnState across transactions; allocate on first use.
-  TxnState* ts = get_txn_state(tx);
+  // Reuse TxnManState across transactions; allocate on first use.
+  TxnManState* ts = get_txn_state(tx);
   if (!ts) {
-    ts = (TxnState*)_mm_malloc(sizeof(TxnState), 64);
-    new (ts) TxnState{};
+    ts = (TxnManState*)_mm_malloc(sizeof(TxnManState), 64);
+    new (ts) TxnManState{};
     tx->cc_txn_state = ts;
   }
   // Increment persistent txn_id; reset per-txn fields.
@@ -646,7 +654,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
 
 void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   (void)th;
-  TxnState* ts = (TxnState*)tx->cc_txn_state;
+  TxnManState* ts = (TxnManState*)tx->cc_txn_state;
   if (!ts) {
     return;
   }
@@ -658,7 +666,7 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
     pj_backoff[ts->txn_type] =
         (b == 0) ? BACKOFF_MIN : (b * 2 < BACKOFF_MAX ? b * 2 : BACKOFF_MAX);
   }
-  // Publish outcome to ring buffer. TxnState is NOT freed — reused next txn.
+  // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
   int final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
   publish_txn_result(ts, final_status);
   for (int i = 0; i < ts->write_count; i++) {
@@ -670,7 +678,7 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
 }
 
 RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
-  TxnState* ts = (TxnState*)txn->cc_txn_state;
+  TxnManState* ts = (TxnManState*)txn->cc_txn_state;
   RowState* rs = (RowState*)orig->cc_row_state;
   // If previous access had early_validation, do piece validation now
   if (ts->pending_piece_commit) {
@@ -699,7 +707,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
         de = de->next;
       }
       if (de) {
-        TxnState* writer_state = (TxnState*)de->writer->cc_txn_state;
+        TxnManState* writer_state = (TxnManState*)de->writer->cc_txn_state;
         if (writer_state && writer_state->status == TXN_RUNNING) {
           add_dependency(ts, de->writer, de->txn_id, true);
           uint64_t tid = get_tid(rs);
@@ -747,7 +755,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
 
 void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
                 int op) {
-  TxnState* ts = (TxnState*)txn->cc_txn_state;
+  TxnManState* ts = (TxnManState*)txn->cc_txn_state;
   RowState* rs = (RowState*)orig->cc_row_state;
   int step;
   const PolicyEntry* policy =
@@ -798,7 +806,7 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
 }
 
 RC cc_pre_commit(txn_man* txn) {
-  TxnState* ts = (TxnState*)txn->cc_txn_state;
+  TxnManState* ts = (TxnManState*)txn->cc_txn_state;
   if (ts->status == TXN_ABORTED) {
     return Abort;
   }
@@ -833,7 +841,7 @@ RC cc_pre_commit(txn_man* txn) {
 void cc_release_op(txn_man* txn, row_t* orig, row_t* local, access_t type,
                    int op) {
   (void)op;
-  TxnState* ts = (TxnState*)txn->cc_txn_state;
+  TxnManState* ts = (TxnManState*)txn->cc_txn_state;
   if (type == XP) {
     // Abort path: remove our entry from dirty list
     RowState* rs = (RowState*)orig->cc_row_state;
