@@ -190,7 +190,8 @@ enum TxnStatus {
 };
 struct Dependency {
   txn_man* writer;
-  uint64_t txn_id;  // writer's TxnManState::txn_id when dependency was created
+  uint64_t txn_id;          // writer's TxnManState::txn_id when dep was created
+  TpccTxnType dep_txn_type; // writer's txn type, captured at creation time
   bool from_dirty_read;
 };
 struct ReadEntry {
@@ -292,7 +293,8 @@ static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_id,
 // with from_dirty_read=false is found and the new one is true, upgrade it.
 // Returns false if the dep array is full (caller should abort).
 static inline bool add_dependency(TxnManState* tms, txn_man* writer,
-                                  uint64_t txn_id, bool from_dirty_read) {
+                                  uint64_t txn_id, TpccTxnType dep_txn_type,
+                                  bool from_dirty_read) {
   for (int i = 0; i < tms->dep_count; i++) {
     if (tms->deps[i].writer == writer && tms->deps[i].txn_id == txn_id) {
       if (from_dirty_read) {
@@ -304,7 +306,7 @@ static inline bool add_dependency(TxnManState* tms, txn_man* writer,
   if (tms->dep_count >= MAX_DEPS) {
     return false;
   }
-  tms->deps[tms->dep_count] = {writer, txn_id, from_dirty_read};
+  tms->deps[tms->dep_count] = {writer, txn_id, dep_txn_type, from_dirty_read};
   tms->dep_count++;
   return true;
 }
@@ -345,15 +347,11 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
       }
       continue;
     }
-    TxnManState* dep_state = get_tms(dep->writer);
-    assert(dep_state);
     // Policy wait targets are Polyjuice local step values (per-txn-type).
-    // Our published steps are a superset of these values (we skip some
-    // intermediate steps due to RD+WR consolidation and missing inserts),
-    // but since we compare with >=, waiting for a skipped step is satisfied
-    // when the next real step is published.
-    int target = (dep_state->txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
-                                                        : policy->wait_payment;
+    // Use dep_txn_type captured at dependency creation to avoid racing with
+    // the writer starting a new txn of a different type.
+    int target = (dep->dep_txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
+                                                      : policy->wait_payment;
     if (!target) {
       continue;
     }
@@ -366,8 +364,7 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
         }
         break;
       }
-      dep_state = get_tms(dep->writer);
-      if (dep_state->step >= target) {
+      if (get_tms(dep->writer)->step >= target) {
         break;
       }
       if (get_sys_clock() - t0 > WAIT_TIMEOUT) {
@@ -474,7 +471,8 @@ static RC piece_validate_and_expose(txn_man* txn, TxnManState* tms) {
     // Add write-write dependencies on prior uncommitted writers
     for (DirtyEntry* e = rs->dirty_head; e; e = e->next) {
       if (e->writer != txn &&
-          !add_dependency(tms, e->writer, e->txn_id, false)) {
+          !add_dependency(tms, e->writer, e->txn_id,
+                          get_tms(e->writer)->txn_type, false)) {
         for (int j = pw; j < pw + locked; j++) {
           unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
         }
@@ -727,7 +725,8 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       if (de) {
         TxnManState* writer_state = (TxnManState*)de->writer->cc_txn_state;
         if (writer_state && writer_state->status == TXN_RUNNING) {
-          if (!add_dependency(tms, de->writer, de->txn_id, true)) {
+          if (!add_dependency(tms, de->writer, de->txn_id,
+                             writer_state->txn_type, true)) {
             unlock(rs);
             return Abort;
           }
