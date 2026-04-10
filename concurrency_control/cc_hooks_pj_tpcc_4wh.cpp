@@ -466,8 +466,9 @@ static RC piece_validate_and_expose(txn_man* txn) {
         return Abort;
       }
     }
+
+    // Expose dirty data so other txns can dirty-read it.
     if (w.to_expose) {
-      // PUBLIC: expose dirty data so other txns can dirty-read it.
       uint32_t sz = w.local_copy->get_tuple_size();
       DirtyEntry* entry = (DirtyEntry*)malloc(sizeof(DirtyEntry));
       entry->writer = txn;
@@ -478,10 +479,6 @@ static RC piece_validate_and_expose(txn_man* txn) {
       rs->dirty_head = entry;
       w.exposed = true;
     }
-    // PRIVATE writes: w.exposed remains false, no dirty_head entry.
-    // NOTE: we do NOT advance tid_word here. The row's version is only
-    // updated during final_commit when data is actually installed.
-    // Dirty visibility is handled entirely by the dirty_head list.
   }
   wlocks.unlock_all(tms);
   tms->piece_read_start = tms->read_count;
