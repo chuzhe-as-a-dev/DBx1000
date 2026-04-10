@@ -70,6 +70,8 @@ static const PolicyEntry POLICY[26] = {
     {0, 1, 0, 1, 7, 6},   // 25
 };
 
+enum TpccTxnType { TXN_NEW_ORDER = 0, TXN_PAYMENT = 1 };
+
 // ---- Access mapping ----
 // Maps runtime op_index (from tpcc_txn_pj.cpp's op_cnt) to a PolicyEntry and
 // step value. Where Polyjuice has separate RD and WR access-ids for the same
@@ -99,10 +101,10 @@ static constexpr std::array<OpMapping, 3> PAY_OPS = {{
     {16, 6},  // op 2: customer WR   (acc_ids 15+16 consolidated)
 }};
 
-static inline const PolicyEntry* lookup_policy(int txn_type, int op_index,
+static inline const PolicyEntry* lookup_policy(TpccTxnType txn_type, int op_index,
                                                int ol_cnt, int* step) {
   const OpMapping* m;
-  if (txn_type == 0) {
+  if (txn_type == TXN_NEW_ORDER) {
     // new_order: prefix, item loop, stock loop, customer suffix
     if (op_index < (int)NO_PREFIX.size()) {
       m = &NO_PREFIX[op_index];
@@ -149,6 +151,7 @@ struct RowState {
   volatile uint64_t tid_word;  // version TID | LOCK_BIT
   DirtyEntry* dirty_head;  // linked list of uncommitted writes (latest first)
 };
+
 static inline uint64_t get_tid(RowState* s) { return s->tid_word & ~LOCK_BIT; }
 static inline bool try_lock(RowState* s) {
   uint64_t v = s->tid_word;
@@ -226,7 +229,7 @@ struct WriteEntry {
 };
 #define MAX_ACCESSES 64
 struct TxnState {
-  int txn_type;         // 0=new_order, 1=payment
+  TpccTxnType txn_type;
   int ol_cnt;           // order-line count (new_order only, for lookup_policy)
   volatile int step;    // current progress (access-id) for wait tracking
   volatile int status;  // TxnStatus
@@ -310,9 +313,11 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
     // intermediate steps due to RD+WR consolidation and missing inserts),
     // but since we compare with >=, waiting for a skipped step is satisfied
     // when the next real step is published.
-    int target = (dep_state->txn_type == 0) ? policy->wait_new_order
+    int target = (dep_state->txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
                                             : policy->wait_payment;
-    if (!target) continue;
+    if (!target) {
+      continue;
+    }
     uint64_t t0 = get_sys_clock();
     while (true) {
       s = check_dep_status(dep);
@@ -558,7 +563,7 @@ static RC final_commit(txn_man* txn, TxnState* txn_state) {
     unlock((RowState*)txn_state->writes[i].orig_row->cc_row_state);
   }
   txn_state->status = TXN_COMMITTED;
-  txn_state->step = (txn_state->txn_type == 0) ? 11 : 7;
+  txn_state->step = (txn_state->txn_type == TXN_NEW_ORDER) ? 11 : 7;
   return RCOK;
 }
 
@@ -596,7 +601,8 @@ static thread_local uint64_t pj_backoff[2] = {};  // [0]=new_order [1]=payment
 void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   (void)th;
   tpcc_query* tq = (tpcc_query*)q;
-  int txn_type = (tq->type == TPCC_NEW_ORDER) ? 0 : 1;
+  TpccTxnType txn_type =
+      (tq->type == TPCC_NEW_ORDER) ? TXN_NEW_ORDER : TXN_PAYMENT;
   // Adaptive backoff: spin before starting if previous attempt aborted.
   if (pj_backoff[txn_type] > 0) {
     uint64_t t0 = get_sys_clock();
@@ -607,7 +613,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   tx->pj_txn_id = tx->pj_txn_id + 1;
   TxnState* ts = (TxnState*)_mm_malloc(sizeof(TxnState), 64);
   ts->txn_type = txn_type;
-  ts->ol_cnt = (ts->txn_type == 0) ? tq->ol_cnt : 0;
+  ts->ol_cnt = (ts->txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
   ts->step = 0;
   ts->status = TXN_RUNNING;
   ts->commit_tid = 0;
