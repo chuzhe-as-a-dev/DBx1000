@@ -226,7 +226,7 @@ struct TxnManState {
   // Readers skip slots where txn_id doesn't match the target.
   struct TxnResult {
     volatile uint64_t txn_id;  // 0=uninitialized, UPDATING=write in progress
-    volatile int status;
+    volatile TxnStatus status;
   };
   static constexpr int HISTORY_SIZE = 8;
   static constexpr uint64_t HISTORY_UPDATING = UINT64_MAX;
@@ -242,7 +242,7 @@ static inline TxnManState* get_txn_state(txn_man* tx) {
 // ---- Dependency resolution helpers ----
 
 // Publish a completed txn's outcome to the ring buffer (seqlock protocol).
-static inline void publish_txn_result(TxnManState* ts, int status) {
+static inline void publish_txn_result(TxnManState* ts, TxnStatus status) {
   int slot = ts->history_head;
   ts->history[slot].txn_id = TxnManState::HISTORY_UPDATING;
   COMPILER_BARRIER
@@ -254,14 +254,14 @@ static inline void publish_txn_result(TxnManState* ts, int status) {
 
 // Look up a txn's outcome in the writer's ring buffer.
 static inline bool lookup_txn_result(TxnManState* writer_ts, uint64_t txn_id,
-                                     int* status) {
+                                     TxnStatus* status) {
   for (int i = 0; i < TxnManState::HISTORY_SIZE; i++) {
     uint64_t id1 = writer_ts->history[i].txn_id;
     if (id1 == TxnManState::HISTORY_UPDATING || id1 != txn_id) {
       continue;
     }
     COMPILER_BARRIER
-    int s = writer_ts->history[i].status;
+    TxnStatus s = writer_ts->history[i].status;
     COMPILER_BARRIER
     uint64_t id2 = writer_ts->history[i].txn_id;
     if (id1 == id2) {
@@ -305,7 +305,7 @@ static inline int check_dep_status(Dependency* dep) {
     return ws->status;
   }
   // Writer moved on. Look up result in ring buffer.
-  int status;
+  TxnStatus status;
   if (lookup_txn_result(ws, dep->txn_id, &status)) {
     return status;
   }
@@ -673,7 +673,7 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
         (b == 0) ? BACKOFF_MIN : (b * 2 < BACKOFF_MAX ? b * 2 : BACKOFF_MAX);
   }
   // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
-  int final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
+  TxnStatus final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
   publish_txn_result(ts, final_status);
   for (int i = 0; i < ts->write_count; i++) {
     if (ts->writes[i].local_copy) {
