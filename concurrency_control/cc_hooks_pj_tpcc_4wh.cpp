@@ -262,17 +262,17 @@ static inline void publish_txn_result(TxnManState* ts, TxnStatus status) {
 }
 
 // Look up a txn's outcome in the writer's ring buffer.
-static inline bool lookup_txn_result(TxnManState* writer_ts, uint64_t txn_id,
+static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_id,
                                      TxnStatus* status) {
   for (int i = 0; i < TxnManState::HISTORY_SIZE; i++) {
-    uint64_t id1 = writer_ts->history[i].txn_id;
+    uint64_t id1 = writer_tms->history[i].txn_id;
     if (id1 == TxnManState::HISTORY_UPDATING || id1 != txn_id) {
       continue;
     }
     COMPILER_BARRIER
-    TxnStatus s = writer_ts->history[i].status;
+    TxnStatus s = writer_tms->history[i].status;
     COMPILER_BARRIER
-    uint64_t id2 = writer_ts->history[i].txn_id;
+    uint64_t id2 = writer_tms->history[i].txn_id;
     if (id1 == id2) {
       *status = s;
       return true;
@@ -301,12 +301,18 @@ static inline void add_dependency(TxnManState* ts, txn_man* writer,
 
 static inline TxnStatus check_dep_status(Dependency* dep) {
   TxnManState* ws = get_txn_state(dep->writer);
-  if (!ws) return TXN_UNKNOWN;
+  if (!ws) {
+    return TXN_UNKNOWN;
+  }
   // Fast path: writer still on the same txn — read status directly.
-  if (ws->txn_id == dep->txn_id) return ws->status;
+  if (ws->txn_id == dep->txn_id) {
+    return ws->status;
+  }
   // Writer moved on. Look up result in ring buffer.
   TxnStatus status;
-  if (lookup_txn_result(ws, dep->txn_id, &status)) return status;
+  if (lookup_txn_result(ws, dep->txn_id, &status)) {
+    return status;
+  }
   return TXN_UNKNOWN;
 }
 
