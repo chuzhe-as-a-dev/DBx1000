@@ -178,7 +178,16 @@ static inline void unlock(RowState* s) { s->tid_word &= ~LOCK_BIT; }
 // transactions. Per-txn fields are reset in cc_pre_txn; persistent fields
 // (txn_id, history ring buffer) survive across transactions for dependency
 // resolution.
-enum TxnStatus { TXN_RUNNING = 0, TXN_COMMITTED = 1, TXN_ABORTED = 2 };
+enum TxnStatus {
+  TXN_RUNNING = 0,
+  TXN_COMMITTED = 1,
+  TXN_ABORTED = 2,
+  // The dependent txn has finished but its outcome was evicted from the
+  // ring buffer before we could read it (the writer's txn_man completed
+  // more than HISTORY_SIZE transactions since the dependency was created).
+  // Treated conservatively: cascade-abort for dirty-read deps.
+  TXN_UNKNOWN = 3,
+};
 struct Dependency {
   txn_man* writer;
   uint64_t txn_id;  // writer's TxnManState::txn_id when dependency was created
@@ -290,27 +299,15 @@ static inline void add_dependency(TxnManState* ts, txn_man* writer,
   }
 }
 
-// Check if a dependent txn has finished. Returns:
-//   TXN_RUNNING   — still running
-//   TXN_COMMITTED — committed
-//   TXN_ABORTED   — aborted
-//   -1            — finished but status unknown (evicted from ring buffer)
-static inline int check_dep_status(Dependency* dep) {
+static inline TxnStatus check_dep_status(Dependency* dep) {
   TxnManState* ws = get_txn_state(dep->writer);
-  if (!ws) {
-    return -1;
-  }
+  if (!ws) return TXN_UNKNOWN;
   // Fast path: writer still on the same txn — read status directly.
-  if (ws->txn_id == dep->txn_id) {
-    return ws->status;
-  }
+  if (ws->txn_id == dep->txn_id) return ws->status;
   // Writer moved on. Look up result in ring buffer.
   TxnStatus status;
-  if (lookup_txn_result(ws, dep->txn_id, &status)) {
-    return status;
-  }
-  // Evicted — status unknown.
-  return -1;
+  if (lookup_txn_result(ws, dep->txn_id, &status)) return status;
+  return TXN_UNKNOWN;
 }
 
 // ---- Wait ----
@@ -323,9 +320,9 @@ static RC do_wait(TxnManState* txn_state, const PolicyEntry* policy) {
     Dependency* dep = &txn_state->deps[d];
     // Determine wait target based on dep's txn type. We need the dep's
     // TxnManState to know its type. If the dep already finished, skip.
-    int s = check_dep_status(dep);
+    TxnStatus s = check_dep_status(dep);
     if (s != TXN_RUNNING) {
-      if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read) {
+      if ((s == TXN_ABORTED || s == TXN_UNKNOWN) && dep->from_dirty_read) {
         return Abort;
       }
       continue;
@@ -348,7 +345,7 @@ static RC do_wait(TxnManState* txn_state, const PolicyEntry* policy) {
     while (true) {
       s = check_dep_status(dep);
       if (s != TXN_RUNNING) {
-        if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read) {
+        if ((s == TXN_ABORTED || s == TXN_UNKNOWN) && dep->from_dirty_read) {
           return Abort;
         }
         break;
@@ -828,9 +825,9 @@ RC cc_pre_commit(txn_man* txn) {
     Dependency* dep = &ts->deps[d];
     uint64_t t0 = get_sys_clock();
     while (true) {
-      int s = check_dep_status(dep);
+      TxnStatus s = check_dep_status(dep);
       if (s != TXN_RUNNING) {
-        if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read) {
+        if ((s == TXN_ABORTED || s == TXN_UNKNOWN) && dep->from_dirty_read) {
           return Abort;
         }
         break;
