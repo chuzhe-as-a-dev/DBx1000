@@ -118,25 +118,6 @@ struct TxnExtra<CCAlg::Vll> {
 template <>
 struct TxnExtra<CCAlg::PerOp> {
   void* cc_txn_state = nullptr;
-
-  // Monotonically increasing id for the current transaction on this txn_man.
-  // Used by dependency tracking to detect when a dependent txn has finished
-  // and its txn_man has been reused for a new transaction, avoiding
-  // use-after-free on cc_txn_state.
-  volatile uint64_t pj_txn_id = 0;
-
-  // Ring buffer of recent completed transaction outcomes.
-  // Written with a seqlock protocol: writer sets txn_id to UPDATING before
-  // writing status, then sets txn_id to the real value after. Readers check
-  // txn_id before and after reading status to detect concurrent writes.
-  static constexpr int PJ_HISTORY_SIZE = 8;
-  static constexpr uint64_t PJ_UPDATING = UINT64_MAX;
-  struct PjTxnResult {
-    volatile uint64_t txn_id;  // PJ_UPDATING while being written
-    volatile int status;       // TxnStatus (committed/aborted)
-  };
-  PjTxnResult pj_history[PJ_HISTORY_SIZE] = {};
-  volatile int pj_history_head = 0;  // next write slot
 };
 
 class txn_man : public TxnExtra<cc_alg> {

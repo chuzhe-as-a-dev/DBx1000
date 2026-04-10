@@ -101,8 +101,9 @@ static constexpr std::array<OpMapping, 3> PAY_OPS = {{
     {16, 6},  // op 2: customer WR   (acc_ids 15+16 consolidated)
 }};
 
-static inline const PolicyEntry* lookup_policy(TpccTxnType txn_type, int op_index,
-                                               int ol_cnt, int* step) {
+static inline const PolicyEntry* lookup_policy(TpccTxnType txn_type,
+                                               int op_index, int ol_cnt,
+                                               int* step) {
   const OpMapping* m;
   if (txn_type == TXN_NEW_ORDER) {
     // new_order: prefix, item loop, stock loop, customer suffix
@@ -173,49 +174,16 @@ static inline void spin_lock(RowState* s) {
 static inline void unlock(RowState* s) { s->tid_word &= ~LOCK_BIT; }
 
 // ---- Per-txn state ----
+// TxnState is allocated once per txn_man (on first use) and reused across
+// transactions. Per-txn fields are reset in cc_pre_txn; persistent fields
+// (txn_id, history ring buffer) survive across transactions for dependency
+// resolution.
 enum TxnStatus { TXN_RUNNING = 0, TXN_COMMITTED = 1, TXN_ABORTED = 2 };
 struct Dependency {
   txn_man* writer;
-  uint64_t txn_id;  // writer's pj_txn_id at the time dependency was created
+  uint64_t txn_id;  // writer's TxnState::txn_id when dependency was created
   bool from_dirty_read;
 };
-
-// ---- Dependency resolution helpers ----
-// Publish a completed txn's outcome to the ring buffer (seqlock protocol).
-static inline void publish_txn_result(txn_man* tx, uint64_t txn_id,
-                                      int status) {
-  int slot = tx->pj_history_head;
-  tx->pj_history[slot].txn_id = TxnExtra<CCAlg::PerOp>::PJ_UPDATING;
-  COMPILER_BARRIER
-  tx->pj_history[slot].status = status;
-  COMPILER_BARRIER
-  tx->pj_history[slot].txn_id = txn_id;
-  tx->pj_history_head = (slot + 1) % TxnExtra<CCAlg::PerOp>::PJ_HISTORY_SIZE;
-}
-
-// Look up a txn's outcome in the ring buffer. Returns true if found,
-// with *status set to the outcome. Returns false if the entry has been
-// evicted (worker moved on too many txns).
-static inline bool lookup_txn_result(txn_man* writer, uint64_t txn_id,
-                                     int* status) {
-  for (int i = 0; i < TxnExtra<CCAlg::PerOp>::PJ_HISTORY_SIZE; i++) {
-    uint64_t id1 = writer->pj_history[i].txn_id;
-    if (id1 == TxnExtra<CCAlg::PerOp>::PJ_UPDATING || id1 != txn_id) {
-      continue;
-    }
-    COMPILER_BARRIER
-    int s = writer->pj_history[i].status;
-    COMPILER_BARRIER
-    uint64_t id2 = writer->pj_history[i].txn_id;
-    if (id1 == id2) {
-      *status = s;
-      return true;
-    }
-    // Concurrent write detected on this slot; it's no longer our entry.
-  }
-  return false;
-}
-
 struct ReadEntry {
   row_t* row;
   uint64_t tid;
@@ -229,6 +197,7 @@ struct WriteEntry {
 };
 #define MAX_ACCESSES 64
 struct TxnState {
+  // -- Per-txn fields (reset each transaction) --
   TpccTxnType txn_type;
   int ol_cnt;           // order-line count (new_order only, for lookup_policy)
   volatile int step;    // current progress (access-id) for wait tracking
@@ -243,7 +212,57 @@ struct TxnState {
   int piece_read_start;       // read_count at start of current piece
   int piece_write_start;      // write_count at start of current piece
   bool pending_piece_commit;  // early-validation pending before next op
+
+  // -- Persistent fields (survive across transactions) --
+  // Monotonically increasing id, incremented each cc_pre_txn. Used by
+  // dependency tracking to detect when a dependent txn_man has moved on.
+  volatile uint64_t txn_id = 0;
+  // Ring buffer of recent completed txn outcomes (seqlock protocol).
+  static constexpr int HISTORY_SIZE = 8;
+  static constexpr uint64_t HISTORY_UPDATING = UINT64_MAX;
+  struct TxnResult {
+    volatile uint64_t txn_id;
+    volatile int status;
+  };
+  TxnResult history[HISTORY_SIZE] = {};
+  int history_head = 0;
 };
+
+// Helper to get the TxnState from a txn_man (may be null for non-PJ txns).
+static inline TxnState* get_txn_state(txn_man* tx) {
+  return (TxnState*)tx->cc_txn_state;
+}
+
+// ---- Dependency resolution helpers ----
+
+// Publish a completed txn's outcome to the ring buffer (seqlock protocol).
+static inline void publish_txn_result(TxnState* ts, int status) {
+  int slot = ts->history_head;
+  ts->history[slot].txn_id = TxnState::HISTORY_UPDATING;
+  COMPILER_BARRIER
+  ts->history[slot].status = status;
+  COMPILER_BARRIER
+  ts->history[slot].txn_id = ts->txn_id;
+  ts->history_head = (slot + 1) % TxnState::HISTORY_SIZE;
+}
+
+// Look up a txn's outcome in the writer's ring buffer.
+static inline bool lookup_txn_result(TxnState* writer_ts, uint64_t txn_id,
+                                     int* status) {
+  for (int i = 0; i < TxnState::HISTORY_SIZE; i++) {
+    uint64_t id1 = writer_ts->history[i].txn_id;
+    if (id1 == TxnState::HISTORY_UPDATING || id1 != txn_id) continue;
+    COMPILER_BARRIER
+    int s = writer_ts->history[i].status;
+    COMPILER_BARRIER
+    uint64_t id2 = writer_ts->history[i].txn_id;
+    if (id1 == id2) {
+      *status = s;
+      return true;
+    }
+  }
+  return false;
+}
 
 // Add a dependency, deduplicating by (writer, txn_id). If an existing dep
 // with from_dirty_read=false is found and the new one is true, upgrade it.
@@ -269,20 +288,13 @@ static inline void add_dependency(TxnState* ts, txn_man* writer,
 //   TXN_ABORTED   — aborted
 //   -1            — finished but status unknown (evicted from ring buffer)
 static inline int check_dep_status(Dependency* dep) {
-  // Fast path: writer still on the same txn — read TxnState directly.
-  if (dep->writer->pj_txn_id == dep->txn_id) {
-    TxnState* ts = (TxnState*)dep->writer->cc_txn_state;
-    if (ts) {
-      return ts->status;
-    }
-    // cc_txn_state is null but txn_id matches — txn is between post_txn
-    // and pre_txn. The result should be in the ring buffer.
-  }
+  TxnState* ws = get_txn_state(dep->writer);
+  if (!ws) return -1;
+  // Fast path: writer still on the same txn — read status directly.
+  if (ws->txn_id == dep->txn_id) return ws->status;
   // Writer moved on. Look up result in ring buffer.
   int status;
-  if (lookup_txn_result(dep->writer, dep->txn_id, &status)) {
-    return status;
-  }
+  if (lookup_txn_result(ws, dep->txn_id, &status)) return status;
   // Evicted — status unknown.
   return -1;
 }
@@ -314,7 +326,7 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
     // but since we compare with >=, waiting for a skipped step is satisfied
     // when the next real step is published.
     int target = (dep_state->txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
-                                            : policy->wait_payment;
+                                                        : policy->wait_payment;
     if (!target) {
       continue;
     }
@@ -447,7 +459,7 @@ static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
       uint32_t sz = w.orig_row->get_tuple_size();
       DirtyEntry* entry = (DirtyEntry*)malloc(sizeof(DirtyEntry));
       entry->writer = txn;
-      entry->txn_id = txn->pj_txn_id;
+      entry->txn_id = txn_state->txn_id;
       entry->data = (char*)malloc(sz);
       memcpy(entry->data, w.local_copy->get_data(), sz);
       entry->next = rs->dirty_head;
@@ -610,10 +622,17 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
       PAUSE
     }
   }
-  tx->pj_txn_id = tx->pj_txn_id + 1;
-  TxnState* ts = (TxnState*)_mm_malloc(sizeof(TxnState), 64);
+  // Reuse TxnState across transactions; allocate on first use.
+  TxnState* ts = get_txn_state(tx);
+  if (!ts) {
+    ts = (TxnState*)_mm_malloc(sizeof(TxnState), 64);
+    new (ts) TxnState{};
+    tx->cc_txn_state = ts;
+  }
+  // Increment persistent txn_id; reset per-txn fields.
+  ts->txn_id = ts->txn_id + 1;
   ts->txn_type = txn_type;
-  ts->ol_cnt = (ts->txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
+  ts->ol_cnt = (txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
   ts->step = 0;
   ts->status = TXN_RUNNING;
   ts->commit_tid = 0;
@@ -623,7 +642,6 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   ts->piece_read_start = 0;
   ts->piece_write_start = 0;
   ts->pending_piece_commit = false;
-  tx->cc_txn_state = ts;
 }
 
 void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
@@ -640,17 +658,15 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
     pj_backoff[ts->txn_type] =
         (b == 0) ? BACKOFF_MIN : (b * 2 < BACKOFF_MAX ? b * 2 : BACKOFF_MAX);
   }
-  // Publish outcome to ring buffer before freeing TxnState.
+  // Publish outcome to ring buffer. TxnState is NOT freed — reused next txn.
   int final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
-  publish_txn_result(tx, tx->pj_txn_id, final_status);
+  publish_txn_result(ts, final_status);
   for (int i = 0; i < ts->write_count; i++) {
     if (ts->writes[i].local_copy) {
       ts->writes[i].local_copy->free_row();
       _mm_free(ts->writes[i].local_copy);
     }
   }
-  _mm_free(ts);
-  tx->cc_txn_state = nullptr;
 }
 
 RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
