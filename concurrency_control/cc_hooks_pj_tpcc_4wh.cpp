@@ -196,14 +196,15 @@ struct WriteEntry {
   bool exposed;      // true if dirty data has been exposed via early-validation
 };
 #define MAX_ACCESSES 64
+#define MAX_DEPS 64
 struct TxnManState {
   // -- Per-txn fields (reset each transaction) --
   TpccTxnType txn_type;
-  int ol_cnt;           // order-line count (new_order only, for lookup_policy)
-  volatile int step;    // current progress (access-id) for wait tracking
-  volatile int status;  // TxnStatus
-  uint64_t commit_tid;
-  Dependency deps[MAX_ACCESSES];
+  int ol_cnt;                    // order-line count (new_order only)
+  volatile int step;             // current progress for wait tracking
+  volatile TxnStatus status;
+  uint64_t commit_tid;           // Silo-style TID computed at validation
+  Dependency deps[MAX_DEPS];
   int dep_count;
   ReadEntry reads[MAX_ACCESSES];
   int read_count;
@@ -278,7 +279,7 @@ static inline void add_dependency(TxnManState* ts, txn_man* writer,
       return;
     }
   }
-  if (ts->dep_count < MAX_ACCESSES) {
+  if (ts->dep_count < MAX_DEPS) {
     ts->deps[ts->dep_count] = {writer, txn_id, from_dirty_read};
     ts->dep_count++;
   }
