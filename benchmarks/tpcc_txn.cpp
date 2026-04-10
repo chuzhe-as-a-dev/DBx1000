@@ -386,7 +386,7 @@ EXEC SQL INSERT INTO NEW_ORDER (no_o_id, no_d_id, no_w_id)
     INDEX* stock_index = _wl->i_stock;
     itemid_t* stock_item;
     index_read(stock_index, stock_key, wh_to_part(ol_supply_w_id), stock_item);
-    assert(item != NULL);
+    assert(stock_item != NULL);
     row_t* r_stock = ((row_t*)stock_item->location);
     row_t* r_stock_local = get_row(r_stock, WR, op_cnt++);
     if (r_stock_local == NULL) {
@@ -447,6 +447,7 @@ EXEC SQL INSERT INTO NEW_ORDER (no_o_id, no_d_id, no_w_id)
 #endif
     //		insert_row(r_ol, _wl->t_orderline);
   }
+
   assert(rc == RCOK);
   return finish(rc);
 }
