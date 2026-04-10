@@ -343,7 +343,10 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
     // the writer starting a new txn of a different type.
     int target = (dep->dep_txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
                                                       : policy->wait_payment;
-    if (!target) continue;
+    if (!target) {
+      continue;
+    }
+
     uint64_t t0 = get_sys_clock();
     while (true) {
       TxnStatus s = check_dep_status(dep);
@@ -370,7 +373,8 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
 // exposes dirty data so other txns can dirty-read it.
 // Per §4.2: "we defer appending reads and visible-writes to their
 // corresponding access lists until a successful early-validation."
-static RC piece_validate_and_expose(txn_man* txn, TxnManState* tms) {
+static RC piece_validate_and_expose(txn_man* txn) {
+  TxnManState* tms = get_tms(txn);
   int pr = tms->piece_read_start;
   int pre = tms->read_count;
   int pw = tms->piece_write_start;
@@ -492,7 +496,8 @@ static RC piece_validate_and_expose(txn_man* txn, TxnManState* tms) {
 }
 
 // ---- Final commit: validate ALL + copy local→orig atomically ----
-static RC final_commit(txn_man* txn, TxnManState* tms) {
+static RC final_commit(txn_man* txn) {
+  TxnManState* tms = get_tms(txn);
   // Lock all write rows
   int locked = 0;
   for (int i = 0; i < tms->write_count; i++) {
@@ -688,7 +693,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   // If previous access had early_validation, do piece validation now
   if (tms->pending_piece_validation) {
     tms->pending_piece_validation = false;
-    if (piece_validate_and_expose(txn, tms) != RCOK) {
+    if (piece_validate_and_expose(txn) != RCOK) {
       tms->status = TXN_ABORTED;
       return Abort;
     }
@@ -822,7 +827,7 @@ RC cc_pre_commit(txn_man* txn) {
   // Flush any pending piece validation
   if (tms->pending_piece_validation) {
     tms->pending_piece_validation = false;
-    if (piece_validate_and_expose(txn, tms) != RCOK) {
+    if (piece_validate_and_expose(txn) != RCOK) {
       return Abort;
     }
   }
@@ -844,7 +849,7 @@ RC cc_pre_commit(txn_man* txn) {
       PAUSE
     }
   }
-  return final_commit(txn, tms);
+  return final_commit(txn);
 }
 
 void cc_release_op(txn_man* txn, row_t* orig, row_t* local, access_t type,
