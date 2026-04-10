@@ -312,12 +312,19 @@ static inline bool add_dependency(TxnManState* tms, txn_man* writer,
 static inline TxnStatus check_dep_status(Dependency* dep) {
   TxnManState* ws = get_tms(dep->writer);
   assert(ws);  // TxnManState is never freed; null means dep on a txn_man
-               // that never ran a transaction — should not happen.
+  // that never ran a transaction — should not happen.
+
+  if (ws->txn_id == dep->txn_id) {
+    return TXN_RUNNING;
+  }
+
   // Ring buffer is the authoritative source for completed txn outcomes.
   TxnStatus status;
-  if (lookup_txn_result(ws, dep->txn_id, &status)) return status;
+  if (lookup_txn_result(ws, dep->txn_id, &status)) {
+    return status;
+  }
+
   // Not in ring buffer: either still running, or evicted.
-  if (ws->txn_id == dep->txn_id) return TXN_RUNNING;
   return TXN_UNKNOWN;
 }
 
