@@ -210,19 +210,24 @@ struct TxnManState {
   int read_count;
   WriteEntry writes[MAX_ACCESSES];
   int write_count;
-  int piece_read_start;       // read_count at start of current piece
-  int piece_write_start;      // write_count at start of current piece
+  int piece_read_start;           // read_count at start of current piece
+  int piece_write_start;          // write_count at start of current piece
   bool pending_piece_validation;  // early-validation pending before next op
 
   // -- Persistent fields (survive across transactions) --
-  // Monotonically increasing id, incremented each cc_pre_txn. Used by
-  // dependency tracking to detect when a dependent txn_man has moved on.
+  // Monotonically increasing id, incremented each cc_pre_txn. Starts at 0
+  // and is bumped to 1 before the first transaction, so valid txn_ids are
+  // always >= 1. This makes 0 a safe sentinel for uninitialized ring buffer
+  // slots (see TxnResult below).
   volatile uint64_t txn_id = 0;
   // Ring buffer of recent completed txn outcomes (seqlock protocol).
+  // Slot validity: txn_id == 0 means uninitialized (never written),
+  // txn_id == HISTORY_UPDATING means write in progress, otherwise valid.
+  // Readers skip slots where txn_id doesn't match the target.
   static constexpr int HISTORY_SIZE = 8;
   static constexpr uint64_t HISTORY_UPDATING = UINT64_MAX;
   struct TxnResult {
-    volatile uint64_t txn_id;
+    volatile uint64_t txn_id;  // 0=uninitialized, UPDATING=write in progress
     volatile int status;
   };
   TxnResult history[HISTORY_SIZE] = {};
