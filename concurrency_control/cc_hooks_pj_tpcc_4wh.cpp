@@ -345,10 +345,8 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
       }
       continue;
     }
-    TxnManState* dep_state = (TxnManState*)dep->writer->cc_txn_state;
-    if (!dep_state) {
-      continue;
-    }
+    TxnManState* dep_state = get_tms(dep->writer);
+    assert(dep_state);
     // Policy wait targets are Polyjuice local step values (per-txn-type).
     // Our published steps are a superset of these values (we skip some
     // intermediate steps due to RD+WR consolidation and missing inserts),
@@ -368,10 +366,7 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
         }
         break;
       }
-      dep_state = (TxnManState*)dep->writer->cc_txn_state;
-      if (!dep_state) {
-        break;
-      }
+      dep_state = get_tms(dep->writer);
       if (dep_state->step >= target) {
         break;
       }
