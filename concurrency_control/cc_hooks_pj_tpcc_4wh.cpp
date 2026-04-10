@@ -4,6 +4,7 @@
 
 #include <mm_malloc.h>
 
+#include <array>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -74,7 +75,7 @@ static const PolicyEntry POLICY[26] = {
 // step value. Where Polyjuice has separate RD and WR access-ids for the same
 // row, we consolidate into one get_row and map to the WR's policy entry.
 struct OpMapping {
-  int policy_index;  // index into POLICY[]
+  int policy_index;  // Polyjuice acc_id (index into POLICY[])
   int step;          // progress value published for wait tracking
 };
 
@@ -83,36 +84,33 @@ struct OpMapping {
 //   item loop:                 ol_cnt ops, all use ITEM entry
 //   stock loop:                ol_cnt ops, all use STOCK entry
 //   suffix op (customer RD):   1 op, after loops
-static const OpMapping NO_PREFIX[] = {
-    {0, 1},   // op 0: warehouse RD  (Polyjuice acc_id 0)
-    {2, 3},   // op 1: district WR   (acc_ids 1+2 consolidated)
-};
-static const OpMapping NO_ITEM = {3, 4};    // acc_id 3
-static const OpMapping NO_STOCK = {5, 6};   // acc_ids 4+5 consolidated
-static const OpMapping NO_CUSTOMER = {10, 11};  // acc_id 10, moved to end
-static constexpr int NO_PREFIX_COUNT =
-    sizeof(NO_PREFIX) / sizeof(NO_PREFIX[0]);
+static constexpr std::array<OpMapping, 2> NO_PREFIX = {{
+    {0, 1},  // op 0: warehouse RD  (acc_id 0)
+    {2, 3},  // op 1: district WR   (acc_ids 1+2 consolidated)
+}};
+static constexpr OpMapping NO_ITEM = {3, 4};        // acc_id 3
+static constexpr OpMapping NO_STOCK = {5, 6};       // acc_ids 4+5 consolidated
+static constexpr OpMapping NO_CUSTOMER = {10, 11};  // acc_id 10
 
 // payment layout: 3 fixed ops, no loops.
-static const OpMapping PAY_OPS[] = {
+static constexpr std::array<OpMapping, 3> PAY_OPS = {{
     {12, 2},  // op 0: warehouse WR  (acc_ids 11+12 consolidated)
     {14, 4},  // op 1: district WR   (acc_ids 13+14 consolidated)
     {16, 6},  // op 2: customer WR   (acc_ids 15+16 consolidated)
-};
-static constexpr int PAY_OP_COUNT = sizeof(PAY_OPS) / sizeof(PAY_OPS[0]);
+}};
 
 static inline const PolicyEntry* lookup_policy(int txn_type, int op_index,
                                                int ol_cnt, int* step) {
   const OpMapping* m;
   if (txn_type == 0) {
     // new_order: prefix, item loop, stock loop, customer suffix
-    if (op_index < NO_PREFIX_COUNT) {
+    if (op_index < (int)NO_PREFIX.size()) {
       m = &NO_PREFIX[op_index];
-    } else if (op_index < NO_PREFIX_COUNT + ol_cnt) {
+    } else if (op_index < (int)NO_PREFIX.size() + ol_cnt) {
       m = &NO_ITEM;
-    } else if (op_index < NO_PREFIX_COUNT + 2 * ol_cnt) {
+    } else if (op_index < (int)NO_PREFIX.size() + 2 * ol_cnt) {
       m = &NO_STOCK;
-    } else if (op_index == NO_PREFIX_COUNT + 2 * ol_cnt) {
+    } else if (op_index == (int)NO_PREFIX.size() + 2 * ol_cnt) {
       m = &NO_CUSTOMER;
     } else {
       printf("ERROR: new_order op_index %d out of range (ol_cnt=%d)\n",
@@ -120,7 +118,7 @@ static inline const PolicyEntry* lookup_policy(int txn_type, int op_index,
       exit(1);
     }
   } else {
-    if (op_index < PAY_OP_COUNT) {
+    if (op_index < (int)PAY_OPS.size()) {
       m = &PAY_OPS[op_index];
     } else {
       printf("ERROR: payment op_index %d out of range\n", op_index);
@@ -143,11 +141,12 @@ static inline const PolicyEntry* lookup_policy(int txn_type, int op_index,
 // new_order: Polyjuice step → our step
 //   1(wh RD)→1, 2(dist RD)→3, 3(dist WR)→3, 4(item RD)→4,
 //   5(stock RD)→6, 6(stock WR)→6, 7-10(inserts)→6, 11(cust RD)→11
-static const int NO_WAIT_STEP[] = {0, 1, 3, 3, 4, 6, 6, 6, 6, 6, 6, 11};
+static constexpr std::array<int, 12> NO_WAIT_STEP = {
+    0, 1, 3, 3, 4, 6, 6, 6, 6, 6, 6, 11};
 // payment: Polyjuice step → our step
 //   1(wh RD)→2, 2(wh WR)→2, 3(dist RD)→4, 4(dist WR)→4,
 //   5(cust RD)→6, 6(cust WR)→6, 7(hist ins)→6
-static const int PAY_WAIT_STEP[] = {0, 2, 2, 4, 4, 6, 6, 6};
+static constexpr std::array<int, 8> PAY_WAIT_STEP = {0, 2, 2, 4, 4, 6, 6, 6};
 
 // ---- Per-row state ----
 #define LOCK_BIT (1ULL << 63)
@@ -333,13 +332,13 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
       if (!pj_step) {
         continue;
       }
-      assert(pj_step < (int)(sizeof(NO_WAIT_STEP) / sizeof(NO_WAIT_STEP[0])));
+      assert(pj_step < (int)NO_WAIT_STEP.size());
     } else {
       pj_step = policy->wait_payment;
       if (!pj_step) {
         continue;
       }
-      assert(pj_step < (int)(sizeof(PAY_WAIT_STEP) / sizeof(PAY_WAIT_STEP[0])));
+      assert(pj_step < (int)PAY_WAIT_STEP.size());
     }
     int target = (dep_state->txn_type == 0) ? NO_WAIT_STEP[pj_step]
                                             : PAY_WAIT_STEP[pj_step];
