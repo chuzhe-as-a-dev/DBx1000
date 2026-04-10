@@ -468,7 +468,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
     }
     if (w.to_expose) {
       // PUBLIC: expose dirty data so other txns can dirty-read it.
-      uint32_t sz = w.orig_row->get_tuple_size();
+      uint32_t sz = w.local_copy->get_tuple_size();
       DirtyEntry* entry = (DirtyEntry*)malloc(sizeof(DirtyEntry));
       entry->writer = txn;
       entry->txn_id = tms->txn_id;
