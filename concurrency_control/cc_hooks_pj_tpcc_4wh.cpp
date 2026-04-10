@@ -265,15 +265,17 @@ static inline void publish_txn_result(TxnManState* ts, TxnStatus status) {
 static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_id,
                                      TxnStatus* status) {
   for (int i = 0; i < TxnManState::HISTORY_SIZE; i++) {
-    uint64_t id1 = writer_tms->history[i].txn_id;
-    if (id1 == 0) continue;  // Uninitialized slot.
-    if (id1 == TxnManState::HISTORY_UPDATING) {
-      // Write in progress — spin until it completes, then check.
-      while ((id1 = writer_tms->history[i].txn_id) ==
-             TxnManState::HISTORY_UPDATING)
-        PAUSE
+    uint64_t id1;
+
+    // If write in progress, spin until it completes, then check.
+    while ((id1 = writer_tms->history[i].txn_id) ==
+           TxnManState::HISTORY_UPDATING) {
+      PAUSE
     }
-    if (id1 != txn_id) continue;
+    if (id1 == 0 || id1 != txn_id) {  // 0 = unused
+      continue;
+    }
+
     COMPILER_BARRIER
     TxnStatus s = writer_tms->history[i].status;
     COMPILER_BARRIER
