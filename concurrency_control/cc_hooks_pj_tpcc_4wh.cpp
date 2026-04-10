@@ -214,7 +214,6 @@ struct TxnManState {
   int ol_cnt;         // order-line count (new_order only)
   volatile int step;  // current progress for wait tracking
   volatile TxnStatus status;
-  uint64_t commit_tid;  // Silo-style TID computed at validation
   Dependency deps[MAX_DEPS];
   int dep_count;
   ReadEntry reads[MAX_ACCESSES];
@@ -453,20 +452,6 @@ static RC piece_validate_and_expose(txn_man* txn) {
       return Abort;
     }
   }
-  // Compute commit TID
-  uint64_t max_tid = tms->commit_tid;
-  for (int i = pr; i < pre; i++) {
-    if (tms->reads[i].tid > max_tid) {
-      max_tid = tms->reads[i].tid;
-    }
-  }
-  for (int i = pw; i < pwe; i++) {
-    uint64_t t = get_tid((RowState*)tms->writes[i].orig_row->cc_row_state);
-    if (t > max_tid) {
-      max_tid = t;
-    }
-  }
-  tms->commit_tid = max_tid + 1;
   // Expose PUBLIC writes to dirty list; PRIVATE writes stay local.
   // Record write-write deps on prior uncommitted writers regardless.
   for (int i = pw; i < pwe; i++) {
@@ -539,8 +524,8 @@ static RC final_commit(txn_man* txn) {
       return Abort;
     }
   }
-  // Compute final commit TID
-  uint64_t max_tid = tms->commit_tid;
+  // Compute commit TID (must be greater than all observed tids).
+  uint64_t max_tid = 0;
   for (int i = 0; i < tms->read_count; i++) {
     if (tms->reads[i].tid > max_tid) {
       max_tid = tms->reads[i].tid;
@@ -552,14 +537,14 @@ static RC final_commit(txn_man* txn) {
       max_tid = t;
     }
   }
-  tms->commit_tid = max_tid + 1;
+  uint64_t commit_tid = max_tid + 1;
   // Install: local_copy → orig_row, remove our entry from dirty list
   for (int i = 0; i < tms->write_count; i++) {
     WriteEntry& w = tms->writes[i];
     RowState* rs = (RowState*)w.orig_row->cc_row_state;
     uint32_t sz = w.orig_row->get_tuple_size();
     memcpy(w.orig_row->get_data(), w.local_copy->get_data(), sz);
-    rs->tid_word = tms->commit_tid | LOCK_BIT;
+    rs->tid_word = commit_tid | LOCK_BIT;
     // Remove our dirty_head entry (only exists for PUBLIC writes).
     if (!w.exposed) {
       continue;
@@ -638,7 +623,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   tms->ol_cnt = (txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
   tms->step = 0;
   tms->status = TXN_RUNNING;
-  tms->commit_tid = 0;
+
   tms->dep_count = 0;
   tms->read_count = 0;
   tms->write_count = 0;
