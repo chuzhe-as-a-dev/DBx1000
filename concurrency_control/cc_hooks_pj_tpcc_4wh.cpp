@@ -290,20 +290,19 @@ static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_id,
 
 // Add a dependency, deduplicating by (writer, txn_id). If an existing dep
 // with from_dirty_read=false is found and the new one is true, upgrade it.
-static inline void add_dependency(TxnManState* tms, txn_man* writer,
+// Returns false if the dep array is full (caller should abort).
+static inline bool add_dependency(TxnManState* tms, txn_man* writer,
                                   uint64_t txn_id, bool from_dirty_read) {
   for (int i = 0; i < tms->dep_count; i++) {
     if (tms->deps[i].writer == writer && tms->deps[i].txn_id == txn_id) {
-      if (from_dirty_read) {
-        tms->deps[i].from_dirty_read = true;
-      }
-      return;
+      if (from_dirty_read) tms->deps[i].from_dirty_read = true;
+      return true;
     }
   }
-  if (tms->dep_count < MAX_DEPS) {
-    tms->deps[tms->dep_count] = {writer, txn_id, from_dirty_read};
-    tms->dep_count++;
-  }
+  if (tms->dep_count >= MAX_DEPS) return false;
+  tms->deps[tms->dep_count] = {writer, txn_id, from_dirty_read};
+  tms->dep_count++;
+  return true;
 }
 
 static inline TxnStatus check_dep_status(Dependency* dep) {
@@ -460,8 +459,7 @@ static RC piece_validate_and_expose(txn_man* txn, TxnManState* tms) {
     }
   }
   for (int i = pw; i < pwe; i++) {
-    uint64_t t =
-        get_tid((RowState*)tms->writes[i].orig_row->cc_row_state);
+    uint64_t t = get_tid((RowState*)tms->writes[i].orig_row->cc_row_state);
     if (t > max_tid) {
       max_tid = t;
     }
@@ -474,8 +472,11 @@ static RC piece_validate_and_expose(txn_man* txn, TxnManState* tms) {
     RowState* rs = (RowState*)w.orig_row->cc_row_state;
     // Add write-write dependencies on prior uncommitted writers
     for (DirtyEntry* e = rs->dirty_head; e; e = e->next) {
-      if (e->writer != txn) {
-        add_dependency(tms, e->writer, e->txn_id, false);
+      if (e->writer != txn &&
+          !add_dependency(tms, e->writer, e->txn_id, false)) {
+        for (int j = pw; j < pw + locked; j++)
+          unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
+        return Abort;
       }
     }
     if (POLICY[w.policy_index].write_visibility == 1) {
@@ -565,8 +566,7 @@ static RC final_commit(txn_man* txn, TxnManState* tms) {
     }
   }
   for (int i = 0; i < tms->write_count; i++) {
-    uint64_t t =
-        get_tid((RowState*)tms->writes[i].orig_row->cc_row_state);
+    uint64_t t = get_tid((RowState*)tms->writes[i].orig_row->cc_row_state);
     if (t > max_tid) {
       max_tid = t;
     }
@@ -725,7 +725,10 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       if (de) {
         TxnManState* writer_state = (TxnManState*)de->writer->cc_txn_state;
         if (writer_state && writer_state->status == TXN_RUNNING) {
-          add_dependency(tms, de->writer, de->txn_id, true);
+          if (!add_dependency(tms, de->writer, de->txn_id, true)) {
+            unlock(rs);
+            return Abort;
+          }
           uint64_t tid = get_tid(rs);
           unlock(rs);
           if (tms->read_count < MAX_ACCESSES) {
