@@ -35,6 +35,7 @@ struct PolicyEntry {
   int wait_payment;      // wait target access-id for payment txns (0=NO_WAIT)
   int wait_delivery;     // wait target access-id for delivery txns (0=NO_WAIT)
 };
+
 // Entries referenced by access mappings are annotated with their txn/op.
 // Other entries participate in the wait chain (wait targets reference
 // access-ids which index into this table).
@@ -69,73 +70,65 @@ static const PolicyEntry POLICY[26] = {
 };
 
 // ---- Access mapping ----
-// Maps runtime op_index (from tpcc_txn_pj.cpp's op_cnt) to the Polyjuice
-// PolicyEntry and step value for progress tracking.
-//
-// tpcc_txn_pj.cpp uses Polyjuice-compatible operation ordering with separate
-// item/stock loops. Where Polyjuice has separate RD and WR access-ids for
-// the same row (e.g., district RD=acc_id 1, district WR=acc_id 2), we use a
-// single get_row(WR) and map to the WR's policy entry. The wait target
-// remapping (acc_id_to_step) handles this consolidation.
-// new_order ops (from tpcc_txn_pj.cpp):
-//   op 0:           warehouse RD   (Polyjuice acc_id 0)
-//   op 1:           district WR    (acc_ids 1+2 consolidated)
-//   op 2..2+N-1:    item[i] RD     (acc_id 3, separate loop)
-//   op 2+N..2+2N-1: stock[i] WR    (acc_ids 4+5 consolidated, separate loop)
-//   op 2+2N:        customer RD    (acc_id 10, moved to end)
-// N = ol_cnt (5-15). The item/stock loops match Polyjuice's structure.
-// Policy entries for RD-only acc_ids (1, 4) are unused; we map to the
-// corresponding WR entry (2, 5) since our single get_row does both.
+// Maps runtime op_index (from tpcc_txn_pj.cpp's op_cnt) to a PolicyEntry and
+// step value. Where Polyjuice has separate RD and WR access-ids for the same
+// row, we consolidate into one get_row and map to the WR's policy entry.
+struct OpMapping {
+  int policy_index;  // index into POLICY[]
+  int step;          // progress value published for wait tracking
+};
 
-// payment ops (from tpcc_txn_pj.cpp, identical to standard TPCC):
-//   op 0: warehouse WR  (acc_ids 11+12 consolidated)
-//   op 1: district WR   (acc_ids 13+14 consolidated)
-//   op 2: customer WR   (acc_ids 15+16 consolidated)
+// new_order layout (from tpcc_txn_pj.cpp):
+//   prefix ops:                fixed count, before loops
+//   item loop:                 ol_cnt ops, all use ITEM entry
+//   stock loop:                ol_cnt ops, all use STOCK entry
+//   suffix op (customer RD):   1 op, after loops
+static const OpMapping NO_PREFIX[] = {
+    {0, 1},   // op 0: warehouse RD  (Polyjuice acc_id 0)
+    {2, 3},   // op 1: district WR   (acc_ids 1+2 consolidated)
+};
+static const OpMapping NO_ITEM = {3, 4};    // acc_id 3
+static const OpMapping NO_STOCK = {5, 6};   // acc_ids 4+5 consolidated
+static const OpMapping NO_CUSTOMER = {10, 11};  // acc_id 10, moved to end
+static constexpr int NO_PREFIX_COUNT =
+    sizeof(NO_PREFIX) / sizeof(NO_PREFIX[0]);
 
-// lookup_policy: compute policy entry and step for a given (txn_type,
-// op_index). For the variable-length item/stock loops, we compute rather than
-// tabulate.
+// payment layout: 3 fixed ops, no loops.
+static const OpMapping PAY_OPS[] = {
+    {12, 2},  // op 0: warehouse WR  (acc_ids 11+12 consolidated)
+    {14, 4},  // op 1: district WR   (acc_ids 13+14 consolidated)
+    {16, 6},  // op 2: customer WR   (acc_ids 15+16 consolidated)
+};
+static constexpr int PAY_OP_COUNT = sizeof(PAY_OPS) / sizeof(PAY_OPS[0]);
+
 static inline const PolicyEntry* lookup_policy(int txn_type, int op_index,
                                                int ol_cnt, int* step) {
+  const OpMapping* m;
   if (txn_type == 0) {
-    // new_order
-    if (op_index == 0) {
-      *step = 1;
-      return &POLICY[0];  // warehouse RD (acc_id 0)
-    } else if (op_index == 1) {
-      *step = 3;
-      return &POLICY[2];  // district WR (acc_id 2, consolidates 1+2)
-    } else if (op_index < 2 + ol_cnt) {
-      *step = 4;
-      return &POLICY[3];  // item RD (acc_id 3)
-    } else if (op_index < 2 + 2 * ol_cnt) {
-      *step = 6;
-      return &POLICY[5];  // stock WR (acc_id 5, consolidates 4+5)
-    } else if (op_index == 2 + 2 * ol_cnt) {
-      *step = 11;
-      return &POLICY[10];  // customer RD (acc_id 10)
+    // new_order: prefix, item loop, stock loop, customer suffix
+    if (op_index < NO_PREFIX_COUNT) {
+      m = &NO_PREFIX[op_index];
+    } else if (op_index < NO_PREFIX_COUNT + ol_cnt) {
+      m = &NO_ITEM;
+    } else if (op_index < NO_PREFIX_COUNT + 2 * ol_cnt) {
+      m = &NO_STOCK;
+    } else if (op_index == NO_PREFIX_COUNT + 2 * ol_cnt) {
+      m = &NO_CUSTOMER;
     } else {
       printf("ERROR: new_order op_index %d out of range (ol_cnt=%d)\n",
              op_index, ol_cnt);
       exit(1);
     }
   } else {
-    // payment
-    switch (op_index) {
-      case 0:
-        *step = 2;
-        return &POLICY[12];  // warehouse WR (acc_id 12, consolidates 11+12)
-      case 1:
-        *step = 4;
-        return &POLICY[14];  // district WR (acc_id 14, consolidates 13+14)
-      case 2:
-        *step = 6;
-        return &POLICY[16];  // customer WR (acc_id 16, consolidates 15+16)
-      default:
-        printf("ERROR: payment op_index %d out of range\n", op_index);
-        exit(1);
+    if (op_index < PAY_OP_COUNT) {
+      m = &PAY_OPS[op_index];
+    } else {
+      printf("ERROR: payment op_index %d out of range\n", op_index);
+      exit(1);
     }
   }
+  *step = m->step;
+  return &POLICY[m->policy_index];
 }
 
 // Polyjuice wait targets are LOCAL step values (per-txn-type).

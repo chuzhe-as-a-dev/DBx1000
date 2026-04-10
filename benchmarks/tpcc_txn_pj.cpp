@@ -138,18 +138,6 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
   r_cust_local->get_value(C_PAYMENT_CNT, c_payment_cnt);
   r_cust_local->set_value(C_PAYMENT_CNT, c_payment_cnt + 1);
 
-  char* c_credit = r_cust_local->get_value(C_CREDIT);
-
-  char h_data[25];
-  memcpy(h_data, w_name, 10);
-  int length = strlen(h_data);
-  if (length > 10) {
-    length = 10;
-  }
-  strcpy(&h_data[length], "    ");
-  strncpy(&h_data[length + 4], d_name, 10);
-  h_data[length + 14] = '\0';
-
   // History insert — skipped (commented out in DBx1000).
 
   assert(rc == RCOK);
