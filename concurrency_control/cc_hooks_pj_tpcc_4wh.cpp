@@ -379,7 +379,9 @@ struct WriteLockSet {
   // Sort writes[begin..end) by orig_row address and try to lock all.
   bool lock_sorted(TxnManState* tms, int begin, int end) {
     count = end - begin;
-    for (int i = 0; i < count; i++) indices[i] = begin + i;
+    for (int i = 0; i < count; i++) {
+      indices[i] = begin + i;
+    }
     std::sort(indices, indices + count, [&](int a, int b) {
       return (uintptr_t)tms->writes[a].orig_row <
              (uintptr_t)tms->writes[b].orig_row;
@@ -387,9 +389,9 @@ struct WriteLockSet {
     for (int i = 0; i < count; i++) {
       RowState* rs = (RowState*)tms->writes[indices[i]].orig_row->cc_row_state;
       if (!try_lock(rs)) {
-        for (int j = 0; j < i; j++)
-          unlock(
-              (RowState*)tms->writes[indices[j]].orig_row->cc_row_state);
+        for (int j = 0; j < i; j++) {
+          unlock((RowState*)tms->writes[indices[j]].orig_row->cc_row_state);
+        }
         return false;
       }
     }
@@ -397,8 +399,9 @@ struct WriteLockSet {
   }
 
   void unlock_all(TxnManState* tms) {
-    for (int i = 0; i < count; i++)
+    for (int i = 0; i < count; i++) {
       unlock((RowState*)tms->writes[indices[i]].orig_row->cc_row_state);
+    }
   }
 };
 
@@ -415,17 +418,15 @@ static RC piece_validate_and_expose(txn_man* txn) {
   int pwe = tms->write_count;
   // Lock write rows in address order to prevent deadlocks.
   WriteLockSet wlocks;
-  if (!wlocks.lock_sorted(tms, pw, pwe)) return Abort;
-  // Validate reads in this piece.
-  // Correctness: we check that tid_word hasn't changed since our read.
-  // - Clean reads: tid_word change means another txn committed or exposed a
-  //   write. This is equivalent to Polyjuice's check for foreign write
-  //   entries on the access list, but more conservative (we also abort if
-  //   an intervening dirty writer later aborted, resetting the tid).
-  // - Dirty reads: validated via dependency tracking (cascading abort if
-  //   the writer aborts), so we skip tid_word validation (dirty=true).
-  // - Self-writes: if this row is also in our write set, we hold the lock,
-  //   so tid_word has LOCK_BIT set. The own_write check handles this.
+  if (!wlocks.lock_sorted(tms, pw, pwe)) {
+    return Abort;
+  }
+
+  // Validate reads in this piece (Silo-style tid_word comparison).
+  // - Clean reads: abort if tid_word changed (another txn wrote this row).
+  // - Dirty reads: skip — validated via dependency tracking instead.
+  // - Self-writes: we hold the lock, so tid_word has LOCK_BIT set. The
+  //   own_write check recognizes this as our own lock, not a conflict.
   for (int i = pr; i < pre; i++) {
     if (tms->reads[i].dirty) {
       continue;
@@ -517,11 +518,15 @@ static RC final_commit(txn_man* txn) {
   TxnManState* tms = get_tms(txn);
   // Lock write rows in address order to prevent deadlocks.
   WriteLockSet wlocks;
-  if (!wlocks.lock_sorted(tms, 0, tms->write_count)) return Abort;
+  if (!wlocks.lock_sorted(tms, 0, tms->write_count)) {
+    return Abort;
+  }
   // Validate all reads (same tid_word approach as piece validation; see
   // comment in piece_validate_and_expose for correctness reasoning).
   for (int i = 0; i < tms->read_count; i++) {
-    if (tms->reads[i].dirty) continue;
+    if (tms->reads[i].dirty) {
+      continue;
+    }
     RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
     uint64_t v = rs->tid_word;
     if (v & LOCK_BIT) {
