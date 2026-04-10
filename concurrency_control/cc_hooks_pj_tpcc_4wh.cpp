@@ -129,25 +129,6 @@ static inline const PolicyEntry* lookup_policy(int txn_type, int op_index,
   return &POLICY[m->policy_index];
 }
 
-// Polyjuice wait targets are LOCAL step values (per-txn-type).
-// In Polyjuice, step = acc_id - txn_first_acc_id + 1:
-//   new_order: steps 1-11 (acc_ids 0-10, first_acc_id=0)
-//   payment:   steps 1-7  (acc_ids 11-17, first_acc_id=11)
-//
-// Our steps differ because we consolidate RD+WR into single ops and skip
-// inserts. These tables convert Polyjuice local wait targets to our steps.
-// 0 means "no-wait" (target doesn't exist or was skipped).
-//
-// new_order: Polyjuice step → our step
-//   1(wh RD)→1, 2(dist RD)→3, 3(dist WR)→3, 4(item RD)→4,
-//   5(stock RD)→6, 6(stock WR)→6, 7-10(inserts)→6, 11(cust RD)→11
-static constexpr std::array<int, 12> NO_WAIT_STEP = {
-    0, 1, 3, 3, 4, 6, 6, 6, 6, 6, 6, 11};
-// payment: Polyjuice step → our step
-//   1(wh RD)→2, 2(wh WR)→2, 3(dist RD)→4, 4(dist WR)→4,
-//   5(cust RD)→6, 6(cust WR)→6, 7(hist ins)→6
-static constexpr std::array<int, 8> PAY_WAIT_STEP = {0, 2, 2, 4, 4, 6, 6, 6};
-
 // ---- Per-row state ----
 #define LOCK_BIT (1ULL << 63)
 
@@ -325,26 +306,13 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
       continue;
     }
     // Policy wait targets are Polyjuice local step values (per-txn-type).
-    // Convert to our step values using the per-type remapping tables.
-    int pj_step;
-    if (dep_state->txn_type == 0) {
-      pj_step = policy->wait_new_order;
-      if (!pj_step) {
-        continue;
-      }
-      assert(pj_step < (int)NO_WAIT_STEP.size());
-    } else {
-      pj_step = policy->wait_payment;
-      if (!pj_step) {
-        continue;
-      }
-      assert(pj_step < (int)PAY_WAIT_STEP.size());
-    }
-    int target = (dep_state->txn_type == 0) ? NO_WAIT_STEP[pj_step]
-                                            : PAY_WAIT_STEP[pj_step];
-    if (!target) {
-      continue;
-    }
+    // Our published steps are a superset of these values (we skip some
+    // intermediate steps due to RD+WR consolidation and missing inserts),
+    // but since we compare with >=, waiting for a skipped step is satisfied
+    // when the next real step is published.
+    int target = (dep_state->txn_type == 0) ? policy->wait_new_order
+                                            : policy->wait_payment;
+    if (!target) continue;
     uint64_t t0 = get_sys_clock();
     while (true) {
       s = check_dep_status(dep);
