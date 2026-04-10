@@ -40,8 +40,7 @@ RC tpcc_txn_man::run_txn(base_query* query) {
   }
 }
 
-// Payment: identical to standard TPCC.
-// Op sequence: warehouse WR (0), district WR (1), customer WR (2).
+// Payment: identical to dbx1000's original version.
 RC tpcc_txn_man::run_payment(tpcc_query* query) {
   RC rc = RCOK;
   uint64_t key;
@@ -62,9 +61,12 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
     r_wh_local = get_row(r_wh, WR, op_cnt++);
   else
     r_wh_local = get_row(r_wh, RD, op_cnt++);
-  if (r_wh_local == NULL) return finish(Abort);
 
+  if (r_wh_local == NULL) {
+    return finish(Abort);
+  }
   double w_ytd;
+
   r_wh_local->get_value(W_YTD, w_ytd);
   if (g_wh_update) {
     r_wh_local->set_value(W_YTD, w_ytd + query->h_amount);
@@ -80,7 +82,9 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
   assert(item != NULL);
   row_t* r_dist = ((row_t*)item->location);
   row_t* r_dist_local = get_row(r_dist, WR, op_cnt++);
-  if (r_dist_local == NULL) return finish(Abort);
+  if (r_dist_local == NULL) {
+    return finish(Abort);
+  }
 
   double d_ytd;
   r_dist_local->get_value(D_YTD, d_ytd);
@@ -97,6 +101,7 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
     INDEX* index = _wl->i_customer_last;
     item = index_read(index, key, wh_to_part(c_w_id));
     assert(item != NULL);
+
     int cnt = 0;
     itemid_t* it = item;
     itemid_t* mid = item;
@@ -116,17 +121,29 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
 
   // op 2: customer
   row_t* r_cust_local = get_row(r_cust, WR, op_cnt++);
-  if (r_cust_local == NULL) return finish(Abort);
-
+  if (r_cust_local == NULL) {
+    return finish(Abort);
+  }
   double c_balance;
   double c_ytd_payment;
   double c_payment_cnt;
+
   r_cust_local->get_value(C_BALANCE, c_balance);
   r_cust_local->set_value(C_BALANCE, c_balance - query->h_amount);
   r_cust_local->get_value(C_YTD_PAYMENT, c_ytd_payment);
   r_cust_local->set_value(C_YTD_PAYMENT, c_ytd_payment + query->h_amount);
   r_cust_local->get_value(C_PAYMENT_CNT, c_payment_cnt);
   r_cust_local->set_value(C_PAYMENT_CNT, c_payment_cnt + 1);
+
+  char* c_credit = r_cust_local->get_value(C_CREDIT);
+
+  char h_data[25];
+  memcpy(h_data, w_name, 10);
+  int length = strlen(h_data);
+  if (length > 10) length = 10;
+  strcpy(&h_data[length], "    ");
+  strncpy(&h_data[length + 4], d_name, 10);
+  h_data[length + 14] = '\0';
 
   // History insert — skipped (commented out in DBx1000).
 
@@ -136,11 +153,11 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
 
 // New order: Polyjuice-compatible op ordering.
 // Op sequence:
-//   op 0:             warehouse RD     (Polyjuice acc_id 0)
-//   op 1:             district WR      (acc_ids 1+2 consolidated)
-//   op 2..2+N-1:      item[i] RD       (acc_id 3, separate loop)
-//   op 2+N..2+2N-1:   stock[i] WR      (acc_ids 4+5 consolidated, separate loop)
-//   op 2+2N:          customer RD       (acc_id 10, moved to end)
+//   op 0:            warehouse RD     (Polyjuice acc_id 0)
+//   op 1:            district WR      (acc_ids 1+2 consolidated)
+//   op 2..2+N-1:     item[i] RD       (acc_id 3, separate loop)
+//   op 2+N..2+2N-1:  stock[i] WR      (acc_ids 4+5 consolidated, separate loop)
+//   op 2+2N:         customer RD      (acc_id 10, moved to end)
 RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   RC rc = RCOK;
   uint64_t key;
@@ -161,7 +178,9 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   assert(item != NULL);
   row_t* r_wh = ((row_t*)item->location);
   row_t* r_wh_local = get_row(r_wh, RD, op_cnt++);
-  if (r_wh_local == NULL) return finish(Abort);
+  if (r_wh_local == NULL) {
+    return finish(Abort);
+  }
 
   double w_tax;
   r_wh_local->get_value(W_TAX, w_tax);
@@ -172,8 +191,9 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   assert(item != NULL);
   row_t* r_dist = ((row_t*)item->location);
   row_t* r_dist_local = get_row(r_dist, WR, op_cnt++);
-  if (r_dist_local == NULL) return finish(Abort);
-
+  if (r_dist_local == NULL) {
+    return finish(Abort);
+  }
   int64_t o_id;
   o_id = *(int64_t*)r_dist_local->get_value(D_NEXT_O_ID);
   o_id++;
@@ -191,9 +211,11 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
     item = index_read(_wl->i_item, key, 0);
     assert(item != NULL);
     row_t* r_item = ((row_t*)item->location);
-    row_t* r_item_local = get_row(r_item, RD, op_cnt++);
-    if (r_item_local == NULL) return finish(Abort);
 
+    row_t* r_item_local = get_row(r_item, RD, op_cnt++);
+    if (r_item_local == NULL) {
+      return finish(Abort);
+    }
     r_item_local->get_value(I_PRICE, i_prices[ol_number]);
   }
 
@@ -210,7 +232,9 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
     assert(stock_item != NULL);
     row_t* r_stock = ((row_t*)stock_item->location);
     row_t* r_stock_local = get_row(r_stock, WR, op_cnt++);
-    if (r_stock_local == NULL) return finish(Abort);
+    if (r_stock_local == NULL) {
+      return finish(Abort);
+    }
 
     UInt64 s_quantity;
     int64_t s_remote_cnt;
@@ -246,8 +270,9 @@ RC tpcc_txn_man::run_new_order(tpcc_query* query) {
   assert(item != NULL);
   row_t* r_cust = (row_t*)item->location;
   row_t* r_cust_local = get_row(r_cust, RD, op_cnt++);
-  if (r_cust_local == NULL) return finish(Abort);
-
+  if (r_cust_local == NULL) {
+    return finish(Abort);
+  }
   uint64_t c_discount;
   r_cust_local->get_value(C_DISCOUNT, c_discount);
 
