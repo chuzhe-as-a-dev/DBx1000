@@ -88,7 +88,9 @@ RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {
   bool stale = (ts->start_ts < s->wts);
   pthread_mutex_unlock(&s->latch);
 
-  if (stale) return Abort;
+  if (stale) {
+    return Abort;
+  }
   return RCOK;
 }
 
@@ -148,7 +150,9 @@ RC cc_pre_commit(txn_man* txn) {
     OccRowState* s = (OccRowState*)txn->accesses[i]->orig_row->cc_row_state;
     pthread_mutex_lock(&s->latch);
     ts->lock_cnt++;
-    if (ts->start_ts < s->wts) ok = false;
+    if (ts->start_ts < s->wts) {
+      ok = false;
+    }
   }
 
   if (ok) {

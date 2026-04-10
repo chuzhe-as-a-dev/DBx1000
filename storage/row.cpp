@@ -36,10 +36,10 @@ class Row_vll;
 // Used inside template lambdas to cast cc_row_state to the correct type.
 template <CCAlg A>
 struct RowManagerType;
-#define MGR(alg, cls)                                    \
-  template <>                                            \
-  struct RowManagerType<CCAlg::alg> {                    \
-    using type = cls;                                    \
+#define MGR(alg, cls)                 \
+  template <>                         \
+  struct RowManagerType<CCAlg::alg> { \
+    using type = cls;                 \
   }
 MGR(DlDetect, Row_lock);
 MGR(NoWait, Row_lock);
@@ -181,7 +181,9 @@ RC row_t::get_row(access_t type, txn_man* txn, row_t*& row, int op_idx) {
     RC rc = RCOK;
     if constexpr (A == CCAlg::PerOp) {
       rc = cc_pre_op(txn, this, type, op_idx);
-      if (rc != RCOK) return rc;
+      if (rc != RCOK) {
+        return rc;
+      }
       row = this;
       return RCOK;
     } else if constexpr (A == CCAlg::WaitDie || A == CCAlg::NoWait ||
@@ -231,28 +233,30 @@ RC row_t::get_row(access_t type, txn_man* txn, row_t*& row, int op_idx) {
               if (!dep_added) {
                 ok = dl_detector.add_dep(txn->get_txn_id(), txnids, txncnt,
                                          txn->row_cnt);
-                if (ok == 0)
+                if (ok == 0) {
                   dep_added = true;
-                else if (ok == 16)
+                } else if (ok == 16) {
                   last_try = now;
+                }
               }
               if (dep_added) {
                 ok = dl_detector.detect_cycle(txn->get_txn_id());
-                if (ok == 16)  // failed to lock the deadlock detector
+                if (ok == 16) {  // failed to lock the deadlock detector
                   last_try = now;
-                else if (ok == 0)
+                } else if (ok == 0) {
                   last_detect = now;
-                else if (ok == 1) {
+                } else if (ok == 1) {
                   last_detect = now;
                 }
               }
-            } else
+            } else {
               PAUSE
+            }
           }
         }
-        if (te.lock_ready)
+        if (te.lock_ready) {
           rc = RCOK;
-        else if (te.lock_abort) {
+        } else if (te.lock_abort) {
           rc = Abort;
           return_row(type, txn, NULL);
         }
@@ -286,7 +290,9 @@ RC row_t::get_row(access_t type, txn_man* txn, row_t*& row, int op_idx) {
         if (rc == WAIT) {
           auto& te = static_cast<TxnExtra<A>&>(*txn);
           uint64_t t1 = get_sys_clock();
-          while (!te.ts_ready) PAUSE
+          while (!te.ts_ready) {
+            PAUSE
+          }
           uint64_t t2 = get_sys_clock();
           INC_TMP_STATS(thd_id, time_wait, t2 - t1);
           row = txn->cur_row;
@@ -370,7 +376,9 @@ void row_t::return_row(access_t type, txn_man* txn, row_t* row, int op_idx) {
       using Mgr = typename RowManagerType<A>::type;
       auto* mgr = reinterpret_cast<Mgr*>(this->cc_row_state);
       assert(row != NULL);
-      if (type == WR) mgr->write(row, static_cast<TxnExtra<A>&>(*txn).end_ts);
+      if (type == WR) {
+        mgr->write(row, static_cast<TxnExtra<A>&>(*txn).end_ts);
+      }
       row->free_row();
       mem_allocator.free(row, sizeof(row_t));
       return;

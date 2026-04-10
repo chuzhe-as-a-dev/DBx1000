@@ -34,7 +34,9 @@ RC Row_tictoc::access(txn_man* txn, TsType type, row_t* local_row) {
   uint64_t v = 0;
   uint64_t v2 = 1;
   uint64_t lock_mask = LOCK_BIT;
-  if (WRITE_PERMISSION_LOCK && type == P_REQ) lock_mask = WRITE_BIT;
+  if (WRITE_PERMISSION_LOCK && type == P_REQ) {
+    lock_mask = WRITE_BIT;
+  }
 
   while ((v2 | RTS_MASK) != (v | RTS_MASK)) {
     v = _ts_word;
@@ -98,7 +100,9 @@ bool Row_tictoc::renew_lease(ts_t wts, ts_t rts) {
 #if !ATOMIC_WORD
   if (_wts != wts) {
 #if TICTOC_MV
-    if (wts == _hist_wts && rts < _wts) return true;
+    if (wts == _hist_wts && rts < _wts) {
+      return true;
+    }
 #endif
     return false;
   }
@@ -119,9 +123,12 @@ bool Row_tictoc::try_renew(ts_t wts, ts_t rts, ts_t& new_rts, uint64_t thd_id) {
 #if ATOMIC_WORD
   uint64_t v = _ts_word;
   uint64_t lock_mask = (WRITE_PERMISSION_LOCK) ? WRITE_BIT : LOCK_BIT;
-  if ((v & WTS_MASK) == wts && ((v & RTS_MASK) >> WTS_LEN) >= rts - wts)
+  if ((v & WTS_MASK) == wts && ((v & RTS_MASK) >> WTS_LEN) >= rts - wts) {
     return true;
-  if (v & lock_mask) return false;
+  }
+  if (v & lock_mask) {
+    return false;
+  }
 #if TICTOC_MV
   COMPILER_BARRIER
   uint64_t hist_wts = _hist_wts;
@@ -133,13 +140,16 @@ bool Row_tictoc::try_renew(ts_t wts, ts_t rts, ts_t& new_rts, uint64_t thd_id) {
     }
   }
 #else
-  if (wts != (v & WTS_MASK)) return false;
+  if (wts != (v & WTS_MASK)) {
+    return false;
+  }
 #endif
 
   ts_t delta_rts = rts - wts;
   if (delta_rts <
-      ((v & RTS_MASK) >> WTS_LEN))  // the rts has already been extended.
+      ((v & RTS_MASK) >> WTS_LEN)) {  // the rts has already been extended.
     return true;
+  }
   bool rebase = false;
   if (delta_rts >= (1 << RTS_LEN)) {
     rebase = true;
@@ -152,23 +162,32 @@ bool Row_tictoc::try_renew(ts_t wts, ts_t rts, ts_t& new_rts, uint64_t thd_id) {
   v2 |= (delta_rts << WTS_LEN);
   while (true) {
     uint64_t pre_v = __sync_val_compare_and_swap(&_ts_word, v, v2);
-    if (pre_v == v) return true;
-    v = pre_v;
-    if (rebase || (v & lock_mask) || (wts != (v & WTS_MASK)))
-      return false;
-    else if (rts < ((v & RTS_MASK) >> WTS_LEN))
+    if (pre_v == v) {
       return true;
+    }
+    v = pre_v;
+    if (rebase || (v & lock_mask) || (wts != (v & WTS_MASK))) {
+      return false;
+    } else if (rts < ((v & RTS_MASK) >> WTS_LEN)) {
+      return true;
+    }
   }
   assert(false);
   return false;
 #else
 #if TICTOC_MV
-  if (wts < _hist_wts) return false;
+  if (wts < _hist_wts) {
+    return false;
+  }
 #else
-  if (wts != _wts) return false;
+  if (wts != _wts) {
+    return false;
+  }
 #endif
   int ret = pthread_mutex_trylock(_latch);
-  if (ret == EBUSY) return false;
+  if (ret == EBUSY) {
+    return false;
+  }
 
   if (wts != _wts) {
 #if TICTOC_MV
@@ -180,7 +199,9 @@ bool Row_tictoc::try_renew(ts_t wts, ts_t rts, ts_t& new_rts, uint64_t thd_id) {
     pthread_mutex_unlock(_latch);
     return false;
   }
-  if (rts > _rts) _rts = rts;
+  if (rts > _rts) {
+    _rts = rts;
+  }
   pthread_mutex_unlock(_latch);
   new_rts = rts;
   return true;
@@ -230,8 +251,9 @@ bool Row_tictoc::try_lock() {
 #if ATOMIC_WORD
   uint64_t lock_mask = (WRITE_PERMISSION_LOCK) ? WRITE_BIT : LOCK_BIT;
   uint64_t v = _ts_word;
-  if (v & lock_mask)  // already locked
+  if (v & lock_mask) {  // already locked
     return false;
+  }
   return __sync_bool_compare_and_swap(&_ts_word, v, v | lock_mask);
 #else
   return pthread_mutex_trylock(_latch) != EBUSY;

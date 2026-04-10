@@ -44,7 +44,9 @@ RC workload::init_schema(std::string schema_file) {
         std::string name;
         while (line.length() != 0) {
           pos = line.find(",");
-          if (pos == std::string::npos) pos = line.length();
+          if (pos == std::string::npos) {
+            pos = line.length();
+          }
           token = line.substr(0, pos);
           line.erase(0, pos + 1);
           switch (elem_num) {
@@ -79,7 +81,9 @@ RC workload::init_schema(std::string schema_file) {
       size_t pos;
       while (line.length() != 0) {
         pos = line.find(",");
-        if (pos == std::string::npos) pos = line.length();
+        if (pos == std::string::npos) {
+          pos = line.length();
+        }
         token = line.substr(0, pos);
         items.push_back(token);
         line.erase(0, pos + 1);
@@ -89,7 +93,9 @@ RC workload::init_schema(std::string schema_file) {
       INDEX* index = (INDEX*)_mm_malloc(sizeof(INDEX), 64);
       new (index) INDEX();
       int part_cnt = (CENTRAL_INDEX) ? 1 : g_part_cnt;
-      if (tname == "ITEM") part_cnt = 1;
+      if (tname == "ITEM") {
+        part_cnt = 1;
+      }
 #if INDEX_STRUCT == IDX_HASH
       if constexpr (wl == WL::Ycsb) {
         index->init(part_cnt, tables[tname], g_synth_table_size * 2);
@@ -112,7 +118,9 @@ RC workload::init_schema(std::string schema_file) {
 void workload::index_insert(INDEX* index, uint64_t key, row_t* row,
                             int64_t part_id) {
   uint64_t pid = part_id;
-  if (part_id == -1) pid = get_part_id(row);
+  if (part_id == -1) {
+    pid = get_part_id(row);
+  }
   itemid_t* m_item = (itemid_t*)mem_allocator.alloc(sizeof(itemid_t), pid);
   m_item->init();
   m_item->type = DT_row;

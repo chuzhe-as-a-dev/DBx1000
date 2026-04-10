@@ -205,10 +205,11 @@ inline uint64_t get_server_clock() {
 }
 
 inline uint64_t get_sys_clock() {
-  if constexpr (time_enable)
+  if constexpr (time_enable) {
     return get_server_clock();
-  else
+  } else {
     return 0;
+  }
 }
 class myrand {
  public:

@@ -24,14 +24,16 @@
 //   - wait_*:            per-txn-type access-id targets (0 = NO_WAIT)
 //     The wait action is invoked before the access. If early_validation is set
 //     on the previous access, the next access's wait values are reused for the
-//     pre-validation wait (§4.2 "we consolidate the two kinds of wait actions").
+//     pre-validation wait (§4.2 "we consolidate the two kinds of wait
+//     actions").
 struct PolicyEntry {
-  int read_version;       // 0=CLEAN_READ, 1=DIRTY_READ
-  int write_visibility;   // 0=PRIVATE, 1=PUBLIC
-  int early_validation;   // piece boundary: validate reads/writes since last validation
-  int wait_new_order;     // wait target access-id for new_order txns (0=NO_WAIT)
-  int wait_payment;       // wait target access-id for payment txns (0=NO_WAIT)
-  int wait_delivery;      // wait target access-id for delivery txns (0=NO_WAIT)
+  int read_version;      // 0=CLEAN_READ, 1=DIRTY_READ
+  int write_visibility;  // 0=PRIVATE, 1=PUBLIC
+  int early_validation;  // piece boundary: validate reads/writes since last
+                         // validation
+  int wait_new_order;    // wait target access-id for new_order txns (0=NO_WAIT)
+  int wait_payment;      // wait target access-id for payment txns (0=NO_WAIT)
+  int wait_delivery;     // wait target access-id for delivery txns (0=NO_WAIT)
 };
 // Entries referenced by access mappings are annotated with their txn/op.
 // Other entries participate in the wait chain (wait targets reference
@@ -90,8 +92,9 @@ static const PolicyEntry POLICY[26] = {
 //   op 1: district WR   (acc_ids 13+14 consolidated)
 //   op 2: customer WR   (acc_ids 15+16 consolidated)
 
-// lookup_policy: compute policy entry and step for a given (txn_type, op_index).
-// For the variable-length item/stock loops, we compute rather than tabulate.
+// lookup_policy: compute policy entry and step for a given (txn_type,
+// op_index). For the variable-length item/stock loops, we compute rather than
+// tabulate.
 static inline const PolicyEntry* lookup_policy(int txn_type, int op_index,
                                                int ol_cnt, int* step) {
   if (txn_type == 0) {
@@ -171,20 +174,23 @@ struct DirtyEntry {
 
 struct RowState {
   volatile uint64_t tid_word;  // version TID | LOCK_BIT
-  DirtyEntry* dirty_head;     // linked list of uncommitted writes (latest first)
+  DirtyEntry* dirty_head;  // linked list of uncommitted writes (latest first)
 };
 static inline uint64_t get_tid(RowState* s) { return s->tid_word & ~LOCK_BIT; }
 static inline bool try_lock(RowState* s) {
   uint64_t v = s->tid_word;
-  if (v & LOCK_BIT) return false;
+  if (v & LOCK_BIT) {
+    return false;
+  }
   return __sync_bool_compare_and_swap(&s->tid_word, v, v | LOCK_BIT);
 }
 static inline void spin_lock(RowState* s) {
   while (true) {
     uint64_t v = s->tid_word;
     if (!(v & LOCK_BIT) &&
-        __sync_bool_compare_and_swap(&s->tid_word, v, v | LOCK_BIT))
+        __sync_bool_compare_and_swap(&s->tid_word, v, v | LOCK_BIT)) {
       return;
+    }
     PAUSE
   }
 }
@@ -194,7 +200,7 @@ static inline void unlock(RowState* s) { s->tid_word &= ~LOCK_BIT; }
 enum TxnStatus { TXN_RUNNING = 0, TXN_COMMITTED = 1, TXN_ABORTED = 2 };
 struct Dependency {
   txn_man* writer;
-  uint64_t txn_id;       // writer's pj_txn_id at the time dependency was created
+  uint64_t txn_id;  // writer's pj_txn_id at the time dependency was created
   bool from_dirty_read;
 };
 
@@ -208,8 +214,7 @@ static inline void publish_txn_result(txn_man* tx, uint64_t txn_id,
   tx->pj_history[slot].status = status;
   COMPILER_BARRIER
   tx->pj_history[slot].txn_id = txn_id;
-  tx->pj_history_head =
-      (slot + 1) % TxnExtra<CCAlg::PerOp>::PJ_HISTORY_SIZE;
+  tx->pj_history_head = (slot + 1) % TxnExtra<CCAlg::PerOp>::PJ_HISTORY_SIZE;
 }
 
 // Look up a txn's outcome in the ring buffer. Returns true if found,
@@ -219,8 +224,9 @@ static inline bool lookup_txn_result(txn_man* writer, uint64_t txn_id,
                                      int* status) {
   for (int i = 0; i < TxnExtra<CCAlg::PerOp>::PJ_HISTORY_SIZE; i++) {
     uint64_t id1 = writer->pj_history[i].txn_id;
-    if (id1 == TxnExtra<CCAlg::PerOp>::PJ_UPDATING || id1 != txn_id)
+    if (id1 == TxnExtra<CCAlg::PerOp>::PJ_UPDATING || id1 != txn_id) {
       continue;
+    }
     COMPILER_BARRIER
     int s = writer->pj_history[i].status;
     COMPILER_BARRIER
@@ -247,10 +253,10 @@ struct WriteEntry {
 };
 #define MAX_ACCESSES 64
 struct TxnState {
-  int txn_type;               // 0=new_order, 1=payment
-  int ol_cnt;                 // order-line count (new_order only, for lookup_policy)
-  volatile int step;          // current progress (access-id) for wait tracking
-  volatile int status;        // TxnStatus
+  int txn_type;         // 0=new_order, 1=payment
+  int ol_cnt;           // order-line count (new_order only, for lookup_policy)
+  volatile int step;    // current progress (access-id) for wait tracking
+  volatile int status;  // TxnStatus
   uint64_t commit_tid;
   Dependency deps[MAX_ACCESSES];
   int dep_count;
@@ -269,7 +275,9 @@ static inline void add_dependency(TxnState* ts, txn_man* writer,
                                   uint64_t txn_id, bool from_dirty_read) {
   for (int i = 0; i < ts->dep_count; i++) {
     if (ts->deps[i].writer == writer && ts->deps[i].txn_id == txn_id) {
-      if (from_dirty_read) ts->deps[i].from_dirty_read = true;
+      if (from_dirty_read) {
+        ts->deps[i].from_dirty_read = true;
+      }
       return;
     }
   }
@@ -288,14 +296,17 @@ static inline int check_dep_status(Dependency* dep) {
   // Fast path: writer still on the same txn — read TxnState directly.
   if (dep->writer->pj_txn_id == dep->txn_id) {
     TxnState* ts = (TxnState*)dep->writer->cc_txn_state;
-    if (ts) return ts->status;
+    if (ts) {
+      return ts->status;
+    }
     // cc_txn_state is null but txn_id matches — txn is between post_txn
     // and pre_txn. The result should be in the ring buffer.
   }
   // Writer moved on. Look up result in ring buffer.
   int status;
-  if (lookup_txn_result(dep->writer, dep->txn_id, &status))
+  if (lookup_txn_result(dep->writer, dep->txn_id, &status)) {
     return status;
+  }
   // Evicted — status unknown.
   return -1;
 }
@@ -312,39 +323,55 @@ static RC do_wait(TxnState* txn_state, const PolicyEntry* policy) {
     // TxnState to know its type. If the dep already finished, skip.
     int s = check_dep_status(dep);
     if (s != TXN_RUNNING) {
-      if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read)
+      if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read) {
         return Abort;
+      }
       continue;
     }
     TxnState* dep_state = (TxnState*)dep->writer->cc_txn_state;
-    if (!dep_state) continue;
+    if (!dep_state) {
+      continue;
+    }
     // Policy wait targets are Polyjuice local step values (per-txn-type).
     // Convert to our step values using the per-type remapping tables.
     int pj_step;
     if (dep_state->txn_type == 0) {
       pj_step = policy->wait_new_order;
-      if (!pj_step) continue;
+      if (!pj_step) {
+        continue;
+      }
       assert(pj_step < (int)(sizeof(NO_WAIT_STEP) / sizeof(NO_WAIT_STEP[0])));
     } else {
       pj_step = policy->wait_payment;
-      if (!pj_step) continue;
+      if (!pj_step) {
+        continue;
+      }
       assert(pj_step < (int)(sizeof(PAY_WAIT_STEP) / sizeof(PAY_WAIT_STEP[0])));
     }
     int target = (dep_state->txn_type == 0) ? NO_WAIT_STEP[pj_step]
                                             : PAY_WAIT_STEP[pj_step];
-    if (!target) continue;
+    if (!target) {
+      continue;
+    }
     uint64_t t0 = get_sys_clock();
     while (true) {
       s = check_dep_status(dep);
       if (s != TXN_RUNNING) {
-        if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read)
+        if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read) {
           return Abort;
+        }
         break;
       }
       dep_state = (TxnState*)dep->writer->cc_txn_state;
-      if (!dep_state) break;
-      if (dep_state->step >= target) break;
-      if (get_sys_clock() - t0 > WAIT_TIMEOUT) return Abort;
+      if (!dep_state) {
+        break;
+      }
+      if (dep_state->step >= target) {
+        break;
+      }
+      if (get_sys_clock() - t0 > WAIT_TIMEOUT) {
+        return Abort;
+      }
       PAUSE
     }
   }
@@ -366,8 +393,9 @@ static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
   for (int i = pw; i < pwe; i++) {
     RowState* rs = (RowState*)txn_state->writes[i].orig_row->cc_row_state;
     if (!try_lock(rs)) {
-      for (int j = pw; j < pw + locked; j++)
+      for (int j = pw; j < pw + locked; j++) {
         unlock((RowState*)txn_state->writes[j].orig_row->cc_row_state);
+      }
       return Abort;
     }
     locked++;
@@ -383,20 +411,24 @@ static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
   // - Self-writes: if this row is also in our write set, we hold the lock,
   //   so tid_word has LOCK_BIT set. The own_write check handles this.
   for (int i = pr; i < pre; i++) {
-    if (txn_state->reads[i].dirty) continue;
+    if (txn_state->reads[i].dirty) {
+      continue;
+    }
     RowState* rs = (RowState*)txn_state->reads[i].row->cc_row_state;
     uint64_t v = rs->tid_word;
     if (v & LOCK_BIT) {
       // Locked by someone — OK if we also write this row (we hold the lock)
       bool own_write = false;
-      for (int j = pw; j < pwe; j++)
+      for (int j = pw; j < pwe; j++) {
         if (txn_state->writes[j].orig_row == txn_state->reads[i].row) {
           own_write = true;
           break;
         }
+      }
       if (!own_write) {
-        for (int j = pw; j < pw + locked; j++)
+        for (int j = pw; j < pw + locked; j++) {
           unlock((RowState*)txn_state->writes[j].orig_row->cc_row_state);
+        }
         return Abort;
       }
       v &= ~LOCK_BIT;
@@ -405,26 +437,33 @@ static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
       // Tid changed — but if we also wrote this row (in a prior piece),
       // our own piece validation may have advanced the tid.
       bool own_write2 = false;
-      for (int j = 0; j < txn_state->write_count; j++)
+      for (int j = 0; j < txn_state->write_count; j++) {
         if (txn_state->writes[j].orig_row == txn_state->reads[i].row) {
           own_write2 = true;
           break;
         }
+      }
       if (!own_write2) {
-        for (int j = pw; j < pw + locked; j++)
+        for (int j = pw; j < pw + locked; j++) {
           unlock((RowState*)txn_state->writes[j].orig_row->cc_row_state);
+        }
         return Abort;
       }
     }
   }
   // Compute commit TID
   uint64_t max_tid = txn_state->commit_tid;
-  for (int i = pr; i < pre; i++)
-    if (txn_state->reads[i].tid > max_tid) max_tid = txn_state->reads[i].tid;
+  for (int i = pr; i < pre; i++) {
+    if (txn_state->reads[i].tid > max_tid) {
+      max_tid = txn_state->reads[i].tid;
+    }
+  }
   for (int i = pw; i < pwe; i++) {
     uint64_t t =
         get_tid((RowState*)txn_state->writes[i].orig_row->cc_row_state);
-    if (t > max_tid) max_tid = t;
+    if (t > max_tid) {
+      max_tid = t;
+    }
   }
   txn_state->commit_tid = max_tid + 1;
   // Expose PUBLIC writes to dirty list; PRIVATE writes stay local.
@@ -434,8 +473,9 @@ static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
     RowState* rs = (RowState*)w.orig_row->cc_row_state;
     // Add write-write dependencies on prior uncommitted writers
     for (DirtyEntry* e = rs->dirty_head; e; e = e->next) {
-      if (e->writer != txn)
+      if (e->writer != txn) {
         add_dependency(txn_state, e->writer, e->txn_id, false);
+      }
     }
     if (POLICY[w.policy_index].write_visibility == 1) {
       // PUBLIC: expose dirty data so other txns can dirty-read it.
@@ -452,8 +492,9 @@ static RC piece_validate_and_expose(txn_man* txn, TxnState* txn_state) {
     // PRIVATE writes: w.exposed remains false, no dirty_head entry.
     rs->tid_word = txn_state->commit_tid | LOCK_BIT;
   }
-  for (int i = pw; i < pwe; i++)
+  for (int i = pw; i < pwe; i++) {
     unlock((RowState*)txn_state->writes[i].orig_row->cc_row_state);
+  }
   txn_state->piece_read_start = txn_state->read_count;
   txn_state->piece_write_start = txn_state->write_count;
   return RCOK;
@@ -466,8 +507,9 @@ static RC final_commit(txn_man* txn, TxnState* txn_state) {
   for (int i = 0; i < txn_state->write_count; i++) {
     RowState* rs = (RowState*)txn_state->writes[i].orig_row->cc_row_state;
     if (!try_lock(rs)) {
-      for (int j = 0; j < locked; j++)
+      for (int j = 0; j < locked; j++) {
         unlock((RowState*)txn_state->writes[j].orig_row->cc_row_state);
+      }
       return Abort;
     }
     locked++;
@@ -475,19 +517,23 @@ static RC final_commit(txn_man* txn, TxnState* txn_state) {
   // Validate all reads (same tid_word approach as piece validation; see
   // comment in piece_validate_and_expose for correctness reasoning).
   for (int i = 0; i < txn_state->read_count; i++) {
-    if (txn_state->reads[i].dirty) continue;
+    if (txn_state->reads[i].dirty) {
+      continue;
+    }
     RowState* rs = (RowState*)txn_state->reads[i].row->cc_row_state;
     uint64_t v = rs->tid_word;
     if (v & LOCK_BIT) {
       bool own_write = false;
-      for (int j = 0; j < txn_state->write_count; j++)
+      for (int j = 0; j < txn_state->write_count; j++) {
         if (txn_state->writes[j].orig_row == txn_state->reads[i].row) {
           own_write = true;
           break;
         }
+      }
       if (!own_write) {
-        for (int j = 0; j < locked; j++)
+        for (int j = 0; j < locked; j++) {
           unlock((RowState*)txn_state->writes[j].orig_row->cc_row_state);
+        }
         return Abort;
       }
       v &= ~LOCK_BIT;
@@ -496,27 +542,33 @@ static RC final_commit(txn_man* txn, TxnState* txn_state) {
       // Tid changed — but if we also wrote this row, our own piece
       // validation may have advanced the tid. That's not a conflict.
       bool own_write2 = false;
-      for (int j = 0; j < txn_state->write_count; j++)
+      for (int j = 0; j < txn_state->write_count; j++) {
         if (txn_state->writes[j].orig_row == txn_state->reads[i].row) {
           own_write2 = true;
           break;
         }
+      }
       if (!own_write2) {
-        for (int j = 0; j < locked; j++)
+        for (int j = 0; j < locked; j++) {
           unlock((RowState*)txn_state->writes[j].orig_row->cc_row_state);
+        }
         return Abort;
       }
     }
   }
   // Compute final commit TID
   uint64_t max_tid = txn_state->commit_tid;
-  for (int i = 0; i < txn_state->read_count; i++)
-    if (txn_state->reads[i].tid > max_tid)
+  for (int i = 0; i < txn_state->read_count; i++) {
+    if (txn_state->reads[i].tid > max_tid) {
       max_tid = txn_state->reads[i].tid;
+    }
+  }
   for (int i = 0; i < txn_state->write_count; i++) {
     uint64_t t =
         get_tid((RowState*)txn_state->writes[i].orig_row->cc_row_state);
-    if (t > max_tid) max_tid = t;
+    if (t > max_tid) {
+      max_tid = t;
+    }
   }
   txn_state->commit_tid = max_tid + 1;
   // Install: local_copy → orig_row, remove our entry from dirty list
@@ -527,7 +579,9 @@ static RC final_commit(txn_man* txn, TxnState* txn_state) {
     memcpy(w.orig_row->get_data(), w.local_copy->get_data(), sz);
     rs->tid_word = txn_state->commit_tid | LOCK_BIT;
     // Remove our dirty_head entry (only exists for PUBLIC writes).
-    if (!w.exposed) continue;
+    if (!w.exposed) {
+      continue;
+    }
     DirtyEntry** pp = &rs->dirty_head;
     while (*pp) {
       if ((*pp)->writer == txn) {
@@ -540,8 +594,9 @@ static RC final_commit(txn_man* txn, TxnState* txn_state) {
       pp = &(*pp)->next;
     }
   }
-  for (int i = 0; i < txn_state->write_count; i++)
+  for (int i = 0; i < txn_state->write_count; i++) {
     unlock((RowState*)txn_state->writes[i].orig_row->cc_row_state);
+  }
   txn_state->status = TXN_COMMITTED;
   txn_state->step = (txn_state->txn_type == 0) ? 11 : 7;
   return RCOK;
@@ -575,8 +630,8 @@ void cc_global_init() {}
 // On abort, increase backoff; on commit, decrease. Spin before retrying.
 // ABORT_PENALTY should be 0 when using this variant.
 static constexpr uint64_t BACKOFF_MIN = 1000;     // ~1 us at 1 GHz
-static constexpr uint64_t BACKOFF_MAX = 100000;    // ~100 us
-static thread_local uint64_t pj_backoff[2] = {};   // [0]=new_order [1]=payment
+static constexpr uint64_t BACKOFF_MAX = 100000;   // ~100 us
+static thread_local uint64_t pj_backoff[2] = {};  // [0]=new_order [1]=payment
 
 void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   (void)th;
@@ -585,7 +640,9 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   // Adaptive backoff: spin before starting if previous attempt aborted.
   if (pj_backoff[txn_type] > 0) {
     uint64_t t0 = get_sys_clock();
-    while (get_sys_clock() - t0 < pj_backoff[txn_type]) PAUSE
+    while (get_sys_clock() - t0 < pj_backoff[txn_type]) {
+      PAUSE
+    }
   }
   tx->pj_txn_id = tx->pj_txn_id + 1;
   TxnState* ts = (TxnState*)_mm_malloc(sizeof(TxnState), 64);
@@ -606,24 +663,26 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
 void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   (void)th;
   TxnState* ts = (TxnState*)tx->cc_txn_state;
-  if (!ts) return;
+  if (!ts) {
+    return;
+  }
   // Adjust backoff: increase on abort, decrease on commit.
   if (r == RCOK) {
     pj_backoff[ts->txn_type] /= 2;
   } else {
     uint64_t b = pj_backoff[ts->txn_type];
-    pj_backoff[ts->txn_type] = (b == 0) ? BACKOFF_MIN
-                                         : (b * 2 < BACKOFF_MAX ? b * 2
-                                                                 : BACKOFF_MAX);
+    pj_backoff[ts->txn_type] =
+        (b == 0) ? BACKOFF_MIN : (b * 2 < BACKOFF_MAX ? b * 2 : BACKOFF_MAX);
   }
   // Publish outcome to ring buffer before freeing TxnState.
   int final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
   publish_txn_result(tx, tx->pj_txn_id, final_status);
-  for (int i = 0; i < ts->write_count; i++)
+  for (int i = 0; i < ts->write_count; i++) {
     if (ts->writes[i].local_copy) {
       ts->writes[i].local_copy->free_row();
       _mm_free(ts->writes[i].local_copy);
     }
+  }
   _mm_free(ts);
   tx->cc_txn_state = nullptr;
 }
@@ -639,17 +698,24 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       return Abort;
     }
   }
-  if (ts->status == TXN_ABORTED) return Abort;
+  if (ts->status == TXN_ABORTED) {
+    return Abort;
+  }
   int step;
-  const PolicyEntry* policy = lookup_policy(ts->txn_type, op, ts->ol_cnt, &step);
-  if (do_wait(ts, policy) != RCOK) return Abort;
+  const PolicyEntry* policy =
+      lookup_policy(ts->txn_type, op, ts->ol_cnt, &step);
+  if (do_wait(ts, policy) != RCOK) {
+    return Abort;
+  }
   if (type == RD || type == SCAN) {
     if (policy->read_version == 1) {
       // DIRTY_READ: read latest uncommitted version from dirty list
       spin_lock(rs);
       DirtyEntry* de = rs->dirty_head;
       // Find the latest entry from a different, still-running txn
-      while (de && (de->writer == txn)) de = de->next;
+      while (de && (de->writer == txn)) {
+        de = de->next;
+      }
       if (de) {
         TxnState* writer_state = (TxnState*)de->writer->cc_txn_state;
         if (writer_state && writer_state->status == TXN_RUNNING) {
@@ -660,7 +726,9 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
             ts->reads[ts->read_count] = {orig, tid, true};
             ts->read_count++;
           }
-          if (step > ts->step) ts->step = step;
+          if (step > ts->step) {
+            ts->step = step;
+          }
           return RCOK;
         }
       }
@@ -689,12 +757,14 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       }
     }
   }
-  if (step > ts->step) ts->step = step;
+  if (step > ts->step) {
+    ts->step = step;
+  }
   return RCOK;
 }
 
-void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out,
-                access_t type, int op) {
+void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
+                int op) {
   TxnState* ts = (TxnState*)txn->cc_txn_state;
   RowState* rs = (RowState*)orig->cc_row_state;
   int step;
@@ -707,7 +777,9 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out,
       spin_lock(rs);
       // Find the latest dirty entry from a different txn
       DirtyEntry* de = rs->dirty_head;
-      while (de && de->writer == txn) de = de->next;
+      while (de && de->writer == txn) {
+        de = de->next;
+      }
       if (de && de->data) {
         uint32_t sz = orig->get_tuple_size();
         row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
@@ -716,8 +788,9 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out,
         unlock(rs);
         *local_row_out = copy;
         txn->accesses[txn->row_cnt]->data = copy;
-      } else
+      } else {
         unlock(rs);
+      }
     }
   }
   if (type == WR) {
@@ -737,16 +810,22 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out,
       ts->read_count++;
     }
   }
-  if (policy->early_validation) ts->pending_piece_commit = true;
+  if (policy->early_validation) {
+    ts->pending_piece_commit = true;
+  }
 }
 
 RC cc_pre_commit(txn_man* txn) {
   TxnState* ts = (TxnState*)txn->cc_txn_state;
-  if (ts->status == TXN_ABORTED) return Abort;
+  if (ts->status == TXN_ABORTED) {
+    return Abort;
+  }
   // Flush any pending piece validation
   if (ts->pending_piece_commit) {
     ts->pending_piece_commit = false;
-    if (piece_validate_and_expose(txn, ts) != RCOK) return Abort;
+    if (piece_validate_and_expose(txn, ts) != RCOK) {
+      return Abort;
+    }
   }
   // Wait for all dependencies to finish
   for (int d = 0; d < ts->dep_count; d++) {
@@ -755,11 +834,14 @@ RC cc_pre_commit(txn_man* txn) {
     while (true) {
       int s = check_dep_status(dep);
       if (s != TXN_RUNNING) {
-        if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read)
+        if ((s == TXN_ABORTED || s == -1) && dep->from_dirty_read) {
           return Abort;
+        }
         break;
       }
-      if (get_sys_clock() - t0 > WAIT_TIMEOUT * 10) return Abort;
+      if (get_sys_clock() - t0 > WAIT_TIMEOUT * 10) {
+        return Abort;
+      }
       PAUSE
     }
   }

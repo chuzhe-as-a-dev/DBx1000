@@ -67,10 +67,13 @@ RC tpcc_wl::init_table() {
   /**********************************/
   tpcc_buffer = new drand48_data*[g_num_wh];
   pthread_t* p_thds = new pthread_t[g_num_wh - 1];
-  for (uint32_t i = 0; i < g_num_wh - 1; i++)
+  for (uint32_t i = 0; i < g_num_wh - 1; i++) {
     pthread_create(&p_thds[i], NULL, threadInitWarehouse, this);
+  }
   threadInitWarehouse(this);
-  for (uint32_t i = 0; i < g_num_wh - 1; i++) pthread_join(p_thds[i], NULL);
+  for (uint32_t i = 0; i < g_num_wh - 1; i++) {
+    pthread_join(p_thds[i], NULL);
+  }
 
   printf("TPCC Data Initialization Complete!\n");
   return RCOK;
@@ -99,7 +102,9 @@ void tpcc_wl::init_tab_item() {
     char data[50];
     MakeAlphaString(26, 50, data, 0);
     // TODO in TPCC, "original" should start at a random position
-    if (RAND(10, 0) == 0) strcpy(data, "original");
+    if (RAND(10, 0) == 0) {
+      strcpy(data, "original");
+    }
     row->set_value(I_DATA, data);
 
     index_insert(i_item, i, row, 0);
@@ -225,10 +230,11 @@ void tpcc_wl::init_tab_cust(uint64_t did, uint64_t wid) {
     row->set_value(C_D_ID, did);
     row->set_value(C_W_ID, wid);
     char c_last[LASTNAME_LEN];
-    if (cid <= 1000)
+    if (cid <= 1000) {
       Lastname(cid - 1, c_last);
-    else
+    } else {
       Lastname(NURand(255, 0, 999, wid - 1), c_last);
+    }
     row->set_value(C_LAST, c_last);
 #if !TPCC_SMALL
     char tmp[3] = "OE";
@@ -313,10 +319,11 @@ void tpcc_wl::init_tab_order(uint64_t did, uint64_t wid) {
     row->set_value(O_W_ID, wid);
     uint64_t o_entry = 2013;
     row->set_value(O_ENTRY_D, o_entry);
-    if (oid < 2101)
+    if (oid < 2101) {
       row->set_value(O_CARRIER_ID, URand(1, 10, wid - 1));
-    else
+    } else {
       row->set_value(O_CARRIER_ID, 0);
+    }
     o_ol_cnt = URand(5, 15, wid - 1);
     row->set_value(O_OL_CNT, o_ol_cnt);
     row->set_value(O_ALL_LOCAL, 1);
@@ -362,7 +369,9 @@ void tpcc_wl::init_tab_order(uint64_t did, uint64_t wid) {
 void tpcc_wl::init_permutation(uint64_t* perm_c_id, uint64_t wid) {
   uint32_t i;
   // Init with consecutive values
-  for (i = 0; i < g_cust_per_dist; i++) perm_c_id[i] = i + 1;
+  for (i = 0; i < g_cust_per_dist; i++) {
+    perm_c_id[i] = i + 1;
+  }
 
   // shuffle
   for (i = 0; i < g_cust_per_dist - 1; i++) {
@@ -386,15 +395,18 @@ void* tpcc_wl::threadInitWarehouse(void* This) {
   assert((uint64_t)tid < g_num_wh);
   srand48_r(wid, tpcc_buffer[tid]);
 
-  if (tid == 0) wl->init_tab_item();
+  if (tid == 0) {
+    wl->init_tab_item();
+  }
   wl->init_tab_wh(wid);
   wl->init_tab_dist(wid);
   wl->init_tab_stock(wid);
   for (uint64_t did = 1; did <= DIST_PER_WARE; did++) {
     wl->init_tab_cust(did, wid);
     wl->init_tab_order(did, wid);
-    for (uint64_t cid = 1; cid <= g_cust_per_dist; cid++)
+    for (uint64_t cid = 1; cid <= g_cust_per_dist; cid++) {
       wl->init_tab_hist(cid, did, wid);
+    }
   }
   return NULL;
 }

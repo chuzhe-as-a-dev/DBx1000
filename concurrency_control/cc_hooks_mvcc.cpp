@@ -65,7 +65,9 @@ void cc_init_row_state(row_t* row) {
 
 void cc_free_row_state(row_t* row) {
   MvccRowState* s = (MvccRowState*)row->cc_row_state;
-  if (!s) return;
+  if (!s) {
+    return;
+  }
   for (int i = 0; i < MVCC_HIS_LEN; i++) {
     if (s->write_history[i].row) {
       s->write_history[i].row->free_row();
@@ -104,8 +106,9 @@ void cc_post_txn(thread_t* thd, txn_man* txn, RC rc) {
 static int find_or_gc_slot(MvccRowState* s) {
   // First pass: find a free slot.
   for (int i = 0; i < MVCC_HIS_LEN; i++) {
-    if (!s->write_history[i].valid && !s->write_history[i].reserved)
+    if (!s->write_history[i].valid && !s->write_history[i].reserved) {
       return i;
+    }
   }
   // History full — reclaim the oldest committed version that isn't latest_row.
   ts_t min_ts = UINT64_MAX;
@@ -132,7 +135,9 @@ RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {
   MvccTxnState* ts = (MvccTxnState*)txn->cc_txn_state;
   MvccRowState* s = (MvccRowState*)orig_row->cc_row_state;
 
-  if (type == RD || type == SCAN) return RCOK;  // deferred to cc_post_op
+  if (type == RD || type == SCAN) {
+    return RCOK;  // deferred to cc_post_op
+  }
 
   // type == WR: P_REQ — reserve a write slot.
   pthread_mutex_lock(&s->latch);
@@ -188,7 +193,9 @@ void cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
   row_t* chosen = NULL;
   if (ts->ts > s->latest_wts) {
     chosen = s->latest_row;
-    if (ts->ts > s->max_served_rts) s->max_served_rts = ts->ts;
+    if (ts->ts > s->max_served_rts) {
+      s->max_served_rts = ts->ts;
+    }
   } else {
     ts_t best_ts = 0;
     for (int i = 0; i < MVCC_HIS_LEN; i++) {
@@ -198,7 +205,9 @@ void cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
         chosen = s->write_history[i].row;
       }
     }
-    if (!chosen) chosen = orig_row;
+    if (!chosen) {
+      chosen = orig_row;
+    }
   }
   pthread_mutex_unlock(&s->latch);
 

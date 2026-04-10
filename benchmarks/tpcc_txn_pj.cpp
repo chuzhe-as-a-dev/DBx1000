@@ -57,10 +57,11 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
   assert(item != NULL);
   row_t* r_wh = ((row_t*)item->location);
   row_t* r_wh_local;
-  if (g_wh_update)
+  if (g_wh_update) {
     r_wh_local = get_row(r_wh, WR, op_cnt++);
-  else
+  } else {
     r_wh_local = get_row(r_wh, RD, op_cnt++);
+  }
 
   if (r_wh_local == NULL) {
     return finish(Abort);
@@ -108,7 +109,9 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
     while (it != NULL) {
       cnt++;
       it = it->next;
-      if (cnt % 2 == 0) mid = mid->next;
+      if (cnt % 2 == 0) {
+        mid = mid->next;
+      }
     }
     r_cust = ((row_t*)mid->location);
   } else {
@@ -140,7 +143,9 @@ RC tpcc_txn_man::run_payment(tpcc_query* query) {
   char h_data[25];
   memcpy(h_data, w_name, 10);
   int length = strlen(h_data);
-  if (length > 10) length = 10;
+  if (length > 10) {
+    length = 10;
+  }
   strcpy(&h_data[length], "    ");
   strncpy(&h_data[length + 4], d_name, 10);
   h_data[length + 14] = '\0';

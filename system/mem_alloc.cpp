@@ -6,12 +6,15 @@
 // Assume the data is strided across the L2 slices, stride granularity
 // is the size of a page
 void mem_alloc::init(uint64_t part_cnt, uint64_t bytes_per_part) {
-  if (g_thread_cnt < g_init_parallelism)
+  if (g_thread_cnt < g_init_parallelism) {
     _bucket_cnt = g_init_parallelism * 4 + 1;
-  else
+  } else {
     _bucket_cnt = g_thread_cnt * 4 + 1;
+  }
   pid_arena = new std::pair<pthread_t, int>[_bucket_cnt];
-  for (int i = 0; i < _bucket_cnt; i++) pid_arena[i] = std::make_pair(0, 0);
+  for (int i = 0; i < _bucket_cnt; i++) {
+    pid_arena[i] = std::make_pair(0, 0);
+  }
 
   if (THREAD_ALLOC) {
     assert(!g_part_alloc);
@@ -62,7 +65,9 @@ void Arena::free(void* ptr) {
 
 void mem_alloc::init_thread_arena() {
   UInt32 buf_cnt = g_thread_cnt;
-  if (buf_cnt < g_init_parallelism) buf_cnt = g_init_parallelism;
+  if (buf_cnt < g_init_parallelism) {
+    buf_cnt = g_init_parallelism;
+  }
   _arenas = new Arena*[buf_cnt];
   for (UInt32 i = 0; i < buf_cnt; i++) {
     _arenas[i] = new Arena[SizeNum];
@@ -115,7 +120,9 @@ int mem_alloc::get_arena_id() {
   pthread_t pid = pthread_self();
   int entry = pid % _bucket_cnt;
   while (pid_arena[entry].first != pid) {
-    if (pid_arena[entry].first == 0) break;
+    if (pid_arena[entry].first == 0) {
+      break;
+    }
     entry = (entry + 1) % _bucket_cnt;
   }
   arena_id = pid_arena[entry].second;
@@ -127,7 +134,9 @@ int mem_alloc::get_arena_id() {
 
 int mem_alloc::get_size_id(UInt32 size) {
   for (int i = 0; i < SizeNum; i++) {
-    if (size <= BlockSizes[i]) return i;
+    if (size <= BlockSizes[i]) {
+      return i;
+    }
   }
   printf("size = %d\n", size);
   assert(false);
@@ -159,9 +168,9 @@ void mem_alloc::free(void* ptr, uint64_t size) {
 // cause trouble)
 void* mem_alloc::alloc(uint64_t size, uint64_t part_id) {
   void* ptr;
-  if (size > BlockSizes[SizeNum - 1])
+  if (size > BlockSizes[SizeNum - 1]) {
     ptr = malloc(size);
-  else if (THREAD_ALLOC && (warmup_finish || enable_thread_mem_pool)) {
+  } else if (THREAD_ALLOC && (warmup_finish || enable_thread_mem_pool)) {
     int arena_id = get_arena_id();
     int size_id = get_size_id(size);
     ptr = _arenas[arena_id][size_id].alloc();

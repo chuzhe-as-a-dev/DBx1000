@@ -40,7 +40,9 @@ void Stats_tmp::clear() {
 }
 
 void Stats::init() {
-  if constexpr (!stats_enable) return;
+  if constexpr (!stats_enable) {
+    return;
+  }
   _stats = (Stats_thd**)_mm_malloc(sizeof(Stats_thd*) * g_thread_cnt, 64);
   tmp_stats = (Stats_tmp**)_mm_malloc(sizeof(Stats_tmp*) * g_thread_cnt, 64);
   dl_detect_time = 0;
@@ -50,7 +52,9 @@ void Stats::init() {
 }
 
 void Stats::init(uint64_t thread_id) {
-  if constexpr (!stats_enable) return;
+  if constexpr (!stats_enable) {
+    return;
+  }
   _stats[thread_id] = (Stats_thd*)_mm_malloc(sizeof(Stats_thd), 64);
   tmp_stats[thread_id] = (Stats_tmp*)_mm_malloc(sizeof(Stats_tmp), 64);
 
@@ -73,10 +77,11 @@ void Stats::clear(uint64_t tid) {
 void Stats::add_debug(uint64_t thd_id, uint64_t value, uint32_t select) {
   if (g_prt_lat_distr && warmup_finish) {
     uint64_t tnum = _stats[thd_id]->txn_cnt;
-    if (select == 1)
+    if (select == 1) {
       _stats[thd_id]->all_debug1[tnum] = value;
-    else if (select == 2)
+    } else if (select == 2) {
       _stats[thd_id]->all_debug2[tnum] = value;
+    }
   }
 }
 
@@ -90,7 +95,9 @@ void Stats::commit(uint64_t thd_id) {
 }
 
 void Stats::abort(uint64_t thd_id) {
-  if constexpr (stats_enable) tmp_stats[thd_id]->init();
+  if constexpr (stats_enable) {
+    tmp_stats[thd_id]->init();
+  }
 }
 
 void Stats::print() {
@@ -177,7 +184,9 @@ void Stats::print() {
       total_debug4,  // / BILLION,
       total_debug5   // / BILLION
   );
-  if (g_prt_lat_distr) print_lat_distr();
+  if (g_prt_lat_distr) {
+    print_lat_distr();
+  }
 }
 
 void Stats::print_lat_distr() {
@@ -186,11 +195,13 @@ void Stats::print_lat_distr() {
     outf = fopen(output_file, "a");
     for (UInt32 tid = 0; tid < g_thread_cnt; tid++) {
       fprintf(outf, "[all_debug1 thd=%d] ", tid);
-      for (uint32_t tnum = 0; tnum < _stats[tid]->txn_cnt; tnum++)
+      for (uint32_t tnum = 0; tnum < _stats[tid]->txn_cnt; tnum++) {
         fprintf(outf, "%ld,", _stats[tid]->all_debug1[tnum]);
+      }
       fprintf(outf, "\n[all_debug2 thd=%d] ", tid);
-      for (uint32_t tnum = 0; tnum < _stats[tid]->txn_cnt; tnum++)
+      for (uint32_t tnum = 0; tnum < _stats[tid]->txn_cnt; tnum++) {
         fprintf(outf, "%ld,", _stats[tid]->all_debug2[tnum]);
+      }
       fprintf(outf, "\n");
     }
     fclose(outf);

@@ -23,13 +23,17 @@ void DL_detect::init() {
 // the txn with fewest locks in a cycle is chosen to abort). (AI-generated)
 int DL_detect::add_dep(uint64_t txnid1, uint64_t* txnids, int cnt,
                        int num_locks) {
-  if (g_no_dl) return 0;
+  if (g_no_dl) {
+    return 0;
+  }
   int thd1 = get_thdid_from_txnid(txnid1);
   pthread_mutex_lock(&dependency[thd1].lock);
   dependency[thd1].txnid = txnid1;
   dependency[thd1].num_locks = num_locks;
 
-  for (int i = 0; i < cnt; i++) dependency[thd1].adj.push_back(txnids[i]);
+  for (int i = 0; i < cnt; i++) {
+    dependency[thd1].adj.push_back(txnids[i]);
+  }
 
   pthread_mutex_unlock(&dependency[thd1].lock);
   return 0;
@@ -109,7 +113,9 @@ bool DL_detect::isCyclic(uint64_t txnid, DetectData* detect_data) {
 // marks the victim (min_txnid) for abort by setting lock_abort = true.
 // (AI-generated)
 int DL_detect::detect_cycle(uint64_t txnid) {
-  if (g_no_dl) return 0;
+  if (g_no_dl) {
+    return 0;
+  }
   uint64_t starttime = get_sys_clock();
   INC_GLOB_STATS(cycle_detect, 1);
   bool deadlock = false;
@@ -143,14 +149,17 @@ int DL_detect::detect_cycle(uint64_t txnid) {
   mem_allocator.free(detect_data, sizeof(DetectData));
   uint64_t timespan = get_sys_clock() - starttime;
   INC_GLOB_STATS(dl_detect_time, timespan);
-  if (deadlock)
+  if (deadlock) {
     return 1;
-  else
+  } else {
     return 0;
+  }
 }
 
 void DL_detect::clear_dep(uint64_t txnid) {
-  if (g_no_dl) return;
+  if (g_no_dl) {
+    return;
+  }
   int thd = get_thdid_from_txnid(txnid);
   pthread_mutex_lock(&dependency[thd].lock);
 

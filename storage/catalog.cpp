@@ -23,7 +23,9 @@ void Catalog::add_col(char* col_name, uint64_t size, char* type) {
 uint64_t Catalog::get_field_id(const char* name) {
   UInt32 i;
   for (i = 0; i < field_cnt; i++) {
-    if (strcmp(name, _columns[i].name) == 0) break;
+    if (strcmp(name, _columns[i].name) == 0) {
+      break;
+    }
   }
   assert(i < field_cnt);
   return i;

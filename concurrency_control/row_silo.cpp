@@ -52,17 +52,24 @@ RC Row_silo::access(txn_man* txn, TsType type, row_t* local_row) {
 bool Row_silo::validate(ts_t tid, bool in_write_set) {
 #if ATOMIC_WORD
   uint64_t v = _tid_word;
-  if (in_write_set) return tid == (v & (~LOCK_BIT));
+  if (in_write_set) {
+    return tid == (v & (~LOCK_BIT));
+  }
 
-  if (v & LOCK_BIT)
+  if (v & LOCK_BIT) {
     return false;
-  else if (tid != (v & (~LOCK_BIT)))
+  } else if (tid != (v & (~LOCK_BIT))) {
     return false;
-  else
+  } else {
     return true;
+  }
 #else
-  if (in_write_set) return tid == _tid;
-  if (!try_lock()) return false;
+  if (in_write_set) {
+    return tid == _tid;
+  }
+  if (!try_lock()) {
+    return false;
+  }
   bool valid = (tid == _tid);
   release();
   return valid;
@@ -110,8 +117,9 @@ void Row_silo::release() {
 bool Row_silo::try_lock() {
 #if ATOMIC_WORD
   uint64_t v = _tid_word;
-  if (v & LOCK_BIT)  // already locked
+  if (v & LOCK_BIT) {  // already locked
     return false;
+  }
   return __sync_bool_compare_and_swap(&_tid_word, v, (v | LOCK_BIT));
 #else
   return pthread_mutex_trylock(_latch) != EBUSY;

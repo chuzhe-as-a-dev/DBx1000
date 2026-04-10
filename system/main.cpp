@@ -25,7 +25,9 @@ int main(int argc, char* argv[]) {
   stats.init();
   glob_manager = (Manager*)_mm_malloc(sizeof(Manager), 64);
   glob_manager->init();
-  if constexpr (cc_alg == CCAlg::DlDetect) dl_detector.init();
+  if constexpr (cc_alg == CCAlg::DlDetect) {
+    dl_detector.init();
+  }
   printf("mem_allocator initialized!\n");
   workload* m_wl;
   if constexpr (wl == WL::Ycsb) {
@@ -45,12 +47,15 @@ int main(int argc, char* argv[]) {
   uint64_t thd_cnt = g_thread_cnt;
   pthread_t p_thds[thd_cnt - 1];
   g_threads = new thread_t*[thd_cnt];
-  for (uint32_t i = 0; i < thd_cnt; i++)
+  for (uint32_t i = 0; i < thd_cnt; i++) {
     g_threads[i] = (thread_t*)_mm_malloc(sizeof(thread_t), 64);
+  }
   // query_queue should be the last one to be initialized!!!
   // because it collects txn latency
   query_queue = (Query_queue*)_mm_malloc(sizeof(Query_queue), 64);
-  if constexpr (wl != WL::Test) query_queue->init(m_wl);
+  if constexpr (wl != WL::Test) {
+    query_queue->init(m_wl);
+  }
   pthread_barrier_init(&warmup_bar, NULL, g_thread_cnt);
   printf("query_queue initialized!\n");
   if constexpr (cc_alg == CCAlg::Hstore) {
@@ -63,7 +68,9 @@ int main(int argc, char* argv[]) {
     cc_global_init();
   }
 
-  for (uint32_t i = 0; i < thd_cnt; i++) g_threads[i]->init(i, m_wl);
+  for (uint32_t i = 0; i < thd_cnt; i++) {
+    g_threads[i]->init(i, m_wl);
+  }
 
   if (WARMUP > 0) {
     printf("WARMUP start!\n");
@@ -72,7 +79,9 @@ int main(int argc, char* argv[]) {
       pthread_create(&p_thds[i], NULL, worker_thread_entry, (void*)vid);
     }
     worker_thread_entry((void*)(thd_cnt - 1));
-    for (uint32_t i = 0; i < thd_cnt - 1; i++) pthread_join(p_thds[i], NULL);
+    for (uint32_t i = 0; i < thd_cnt - 1; i++) {
+      pthread_join(p_thds[i], NULL);
+    }
     printf("WARMUP finished!\n");
   }
   warmup_finish = true;
@@ -85,12 +94,16 @@ int main(int argc, char* argv[]) {
     pthread_create(&p_thds[i], NULL, worker_thread_entry, (void*)vid);
   }
   worker_thread_entry((void*)(thd_cnt - 1));
-  for (uint32_t i = 0; i < thd_cnt - 1; i++) pthread_join(p_thds[i], NULL);
+  for (uint32_t i = 0; i < thd_cnt - 1; i++) {
+    pthread_join(p_thds[i], NULL);
+  }
   int64_t endtime = get_server_clock();
 
   if constexpr (wl != WL::Test) {
     printf("PASS! SimTime = %ld\n", endtime - starttime);
-    if constexpr (stats_enable) stats.print();
+    if constexpr (stats_enable) {
+      stats.print();
+    }
   } else {
     ((TestWorkload*)m_wl)->summarize();
   }

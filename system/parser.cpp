@@ -51,65 +51,78 @@ void parser(int argc, char* argv[]) {
 
   for (int i = 1; i < argc; i++) {
     assert(argv[i][0] == '-');
-    if (argv[i][1] == 'a')
+    if (argv[i][1] == 'a') {
       g_part_alloc = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'm')
+    } else if (argv[i][1] == 'm') {
       g_mem_pad = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'q')
+    } else if (argv[i][1] == 'q') {
       g_query_intvl = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'c')
+    } else if (argv[i][1] == 'c') {
       g_part_per_txn = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'e')
+    } else if (argv[i][1] == 'e') {
       g_perc_multi_part = atof(&argv[i][2]);
-    else if (argv[i][1] == 'r')
+    } else if (argv[i][1] == 'r') {
       g_read_perc = atof(&argv[i][2]);
-    else if (argv[i][1] == 'w')
+    } else if (argv[i][1] == 'w') {
       g_write_perc = atof(&argv[i][2]);
-    else if (argv[i][1] == 'z')
+    } else if (argv[i][1] == 'z') {
       g_zipf_theta = atof(&argv[i][2]);
-    else if (argv[i][1] == 'd')
+    } else if (argv[i][1] == 'd') {
       g_prt_lat_distr = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'p')
+    } else if (argv[i][1] == 'p') {
       g_part_cnt = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'v')
+    } else if (argv[i][1] == 'v') {
       g_virtual_part_cnt = atoi(&argv[i][2]);
-    else if (argv[i][1] == 't')
+    } else if (argv[i][1] == 't') {
       g_thread_cnt = atoi(&argv[i][2]);
-    else if (argv[i][1] == 's')
+    } else if (argv[i][1] == 's') {
       g_synth_table_size = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'R')
+    } else if (argv[i][1] == 'R') {
       g_req_per_query = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'f')
+    } else if (argv[i][1] == 'f') {
       g_field_per_tuple = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'n')
+    } else if (argv[i][1] == 'n') {
       g_num_wh = atoi(&argv[i][2]);
-    else if (argv[i][1] == 'G') {
-      if (argv[i][2] == 'a')
+    } else if (argv[i][1] == 'G') {
+      if (argv[i][2] == 'a') {
         g_abort_penalty = atoi(&argv[i][3]);
-      else if (argv[i][2] == 'c')
+      } else if (argv[i][2] == 'c') {
         g_central_man = atoi(&argv[i][3]);
-      else if (argv[i][2] == 't')
+      } else if (argv[i][2] == 't') {
         g_ts_alloc = atoi(&argv[i][3]);
-      else if (argv[i][2] == 'k')
+      } else if (argv[i][2] == 'k') {
         g_key_order = atoi(&argv[i][3]);
-      else if (argv[i][2] == 'n')
+      } else if (argv[i][2] == 'n') {
         g_no_dl = atoi(&argv[i][3]);
-      else if (argv[i][2] == 'o')
+      } else if (argv[i][2] == 'o') {
         g_timeout = atol(&argv[i][3]);
-      else if (argv[i][2] == 'l')
+      } else if (argv[i][2] == 'l') {
         g_dl_loop_detect = atoi(&argv[i][3]);
-      else if (argv[i][2] == 'b')
+      } else if (argv[i][2] == 'b') {
         g_ts_batch_alloc = atoi(&argv[i][3]);
-      else if (argv[i][2] == 'u')
+      } else if (argv[i][2] == 'u') {
         g_ts_batch_num = atoi(&argv[i][3]);
+      }
     } else if (argv[i][1] == 'T') {
-      if (argv[i][2] == 'p') g_perc_payment = atof(&argv[i][3]);
-      if (argv[i][2] == 'u') g_wh_update = atoi(&argv[i][3]);
-      if (argv[i][2] == 'r') g_perc_remote_pay = atof(&argv[i][3]);
-      if (argv[i][2] == 's') g_perc_remote_neworder = atof(&argv[i][3]);
+      if (argv[i][2] == 'p') {
+        g_perc_payment = atof(&argv[i][3]);
+      }
+      if (argv[i][2] == 'u') {
+        g_wh_update = atoi(&argv[i][3]);
+      }
+      if (argv[i][2] == 'r') {
+        g_perc_remote_pay = atof(&argv[i][3]);
+      }
+      if (argv[i][2] == 's') {
+        g_perc_remote_neworder = atof(&argv[i][3]);
+      }
     } else if (argv[i][1] == 'A') {
-      if (argv[i][2] == 'r') g_test_case = READ_WRITE;
-      if (argv[i][2] == 'c') g_test_case = CONFLICT;
+      if (argv[i][2] == 'r') {
+        g_test_case = READ_WRITE;
+      }
+      if (argv[i][2] == 'c') {
+        g_test_case = CONFLICT;
+      }
     } else if (argv[i][1] == 'o') {
       i++;
       output_file = argv[i];
@@ -124,8 +137,11 @@ void parser(int argc, char* argv[]) {
       std::string value = line.substr(pos + 1, line.length());
       assert(g_params.find(name) != g_params.end());
       g_params[name] = value;
-    } else
+    } else {
       assert(false);
+    }
   }
-  if (g_thread_cnt < g_init_parallelism) g_init_parallelism = g_thread_cnt;
+  if (g_thread_cnt < g_init_parallelism) {
+    g_init_parallelism = g_thread_cnt;
+  }
 }

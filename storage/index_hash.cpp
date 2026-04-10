@@ -11,7 +11,9 @@ RC IndexHash::init(uint64_t bucket_cnt, int part_cnt) {
   for (int i = 0; i < part_cnt; i++) {
     _buckets[i] = (BucketHeader*)_mm_malloc(
         sizeof(BucketHeader) * _bucket_cnt_per_part, 64);
-    for (uint32_t n = 0; n < _bucket_cnt_per_part; n++) _buckets[i][n].init();
+    for (uint32_t n = 0; n < _bucket_cnt_per_part; n++) {
+      _buckets[i][n].init();
+    }
   }
   return RCOK;
 }
@@ -99,7 +101,9 @@ void BucketHeader::insert_item(idx_key_t key, itemid_t* item, int part_id) {
   BucketNode* cur_node = first_node;
   BucketNode* prev_node = NULL;
   while (cur_node != NULL) {
-    if (cur_node->key == key) break;
+    if (cur_node->key == key) {
+      break;
+    }
     prev_node = cur_node;
     cur_node = cur_node->next;
   }
@@ -125,7 +129,9 @@ void BucketHeader::read_item(idx_key_t key, itemid_t*& item,
                              const char* tname) {
   BucketNode* cur_node = first_node;
   while (cur_node != NULL) {
-    if (cur_node->key == key) break;
+    if (cur_node->key == key) {
+      break;
+    }
     cur_node = cur_node->next;
   }
   M_ASSERT(cur_node != NULL, "Key does not exist!");

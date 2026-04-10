@@ -50,8 +50,9 @@ RC ycsb_wl::init_table() {
 void ycsb_wl::init_table_parallel() {
   enable_thread_mem_pool = true;
   pthread_t p_thds[g_init_parallelism - 1];
-  for (UInt32 i = 0; i < g_init_parallelism - 1; i++)
+  for (UInt32 i = 0; i < g_init_parallelism - 1; i++) {
     pthread_create(&p_thds[i], NULL, threadInitTable, this);
+  }
   threadInitTable(this);
 
   for (uint32_t i = 0; i < g_init_parallelism - 1; i++) {

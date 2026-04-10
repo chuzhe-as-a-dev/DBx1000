@@ -28,19 +28,22 @@ void txn_man::init(thread_t* h_thd, workload* h_wl, uint64_t thd_id) {
   wr_cnt = 0;
   insert_cnt = 0;
   accesses = (Access**)_mm_malloc(sizeof(Access*) * MAX_ROW_PER_TXN, 64);
-  for (int i = 0; i < MAX_ROW_PER_TXN; i++) accesses[i] = NULL;
+  for (int i = 0; i < MAX_ROW_PER_TXN; i++) {
+    accesses[i] = NULL;
+  }
   num_accesses_alloc = 0;
   // Initialize CC-specific fields from TxnExtra<cc_alg>.
   [this]<CCAlg A = cc_alg>() {
     auto& extra = static_cast<TxnExtra<A>&>(*this);
     if constexpr (A == CCAlg::Tictoc || A == CCAlg::Silo) {
       extra._pre_abort = (g_params["pre_abort"] == "true");
-      if (g_params["validation_lock"] == "no-wait")
+      if (g_params["validation_lock"] == "no-wait") {
         extra._validation_no_wait = true;
-      else if (g_params["validation_lock"] == "waiting")
+      } else if (g_params["validation_lock"] == "waiting") {
         extra._validation_no_wait = false;
-      else
+      } else {
         assert(false);
+      }
     }
     if constexpr (A == CCAlg::Tictoc) {
       extra._max_wts = 0;
@@ -82,7 +85,9 @@ void txn_man::cleanup(RC rc) {
   for (int rid = row_cnt - 1; rid >= 0; rid--) {
     row_t* orig_r = accesses[rid]->orig_row;
     access_t type = accesses[rid]->type;
-    if (type == WR && rc == Abort) type = XP;
+    if (type == WR && rc == Abort) {
+      type = XP;
+    }
 
     if constexpr ((cc_alg == CCAlg::NoWait || cc_alg == CCAlg::DlDetect) &&
                   iso_level == IsoLevel::RepeatableRead) {
@@ -145,7 +150,9 @@ void txn_man::cleanup(RC rc) {
 // immediately after acquisition (lock-then-release), so the row manager is
 // notified here rather than in cleanup(). (AI-generated)
 row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
-  if constexpr (cc_alg == CCAlg::Hstore) return row;
+  if constexpr (cc_alg == CCAlg::Hstore) {
+    return row;
+  }
   uint64_t starttime = get_sys_clock();
   RC rc = RCOK;
   if (accesses[row_cnt] == NULL) {
@@ -203,7 +210,9 @@ row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
 
   if constexpr ((cc_alg == CCAlg::NoWait || cc_alg == CCAlg::DlDetect) &&
                 iso_level == IsoLevel::RepeatableRead) {
-    if (type == RD) row->return_row(type, this, accesses[row_cnt]->data);
+    if (type == RD) {
+      row->return_row(type, this, accesses[row_cnt]->data);
+    }
   }
 
   if constexpr (cc_alg == CCAlg::PerOp) {
@@ -211,7 +220,9 @@ row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
   }
 
   row_cnt++;
-  if (type == WR) wr_cnt++;
+  if (type == WR) {
+    wr_cnt++;
+  }
 
   uint64_t timespan = get_sys_clock() - starttime;
   INC_TMP_STATS(get_thd_id(), time_man, timespan);
@@ -219,7 +230,9 @@ row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
 }
 
 void txn_man::insert_row(row_t* row, table_t* table) {
-  if constexpr (cc_alg == CCAlg::Hstore) return;
+  if constexpr (cc_alg == CCAlg::Hstore) {
+    return;
+  }
   assert(insert_cnt < MAX_ROW_PER_TXN);
   insert_rows[insert_cnt++] = row;
 }
@@ -246,25 +259,30 @@ RC txn_man::finish(RC rc) {
     } else {
       uint64_t starttime = get_sys_clock();
       if constexpr (A == CCAlg::Occ) {
-        if (rc == RCOK)
+        if (rc == RCOK) {
           rc = occ_man.validate(this);
-        else
+        } else {
           cleanup(rc);
+        }
       } else if constexpr (A == CCAlg::Tictoc) {
-        if (rc == RCOK)
+        if (rc == RCOK) {
           rc = validate_tictoc();
-        else
+        } else {
           cleanup(rc);
+        }
       } else if constexpr (A == CCAlg::Silo) {
-        if (rc == RCOK)
+        if (rc == RCOK) {
           rc = validate_silo();
-        else
+        } else {
           cleanup(rc);
+        }
       } else if constexpr (A == CCAlg::Hekaton) {
         rc = validate_hekaton(rc);
         cleanup(rc);
       } else if constexpr (A == CCAlg::PerOp) {
-        if (rc == RCOK) rc = cc_pre_commit(this);
+        if (rc == RCOK) {
+          rc = cc_pre_commit(this);
+        }
         cleanup(rc);
       } else {
         cleanup(rc);
@@ -278,7 +296,8 @@ RC txn_man::finish(RC rc) {
 }
 
 void txn_man::release() {
-  for (int i = 0; i < num_accesses_alloc; i++)
+  for (int i = 0; i < num_accesses_alloc; i++) {
     mem_allocator.free(accesses[i], 0);
+  }
   mem_allocator.free(accesses, 0);
 }

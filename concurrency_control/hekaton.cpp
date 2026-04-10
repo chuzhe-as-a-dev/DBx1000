@@ -15,16 +15,22 @@ RC txn_man::validate_hekaton(RC rc) {
 #if ISOLATION_LEVEL == SERIALIZABLE
   if (rc == RCOK) {
     for (int rid = 0; rid < row_cnt; rid++) {
-      if (accesses[rid]->type == WR) continue;
+      if (accesses[rid]->type == WR) {
+        continue;
+      }
       rc = cc_mgr(accesses[rid]->orig_row)
                ->prepare_read(this, accesses[rid]->data, commit_ts);
-      if (rc == Abort) break;
+      if (rc == Abort) {
+        break;
+      }
     }
   }
 #endif
   // postprocess
   for (int rid = 0; rid < row_cnt; rid++) {
-    if (accesses[rid]->type == RD) continue;
+    if (accesses[rid]->type == RD) {
+      continue;
+    }
     cc_mgr(accesses[rid]->orig_row)->post_process(this, commit_ts, rc);
   }
   return rc;

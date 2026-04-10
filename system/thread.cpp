@@ -27,7 +27,9 @@ void thread_t::init(uint64_t thd_id, workload* workload) {
   _abort_buffer_size = ABORT_BUFFER_SIZE;
   _abort_buffer = (AbortBufferEntry*)_mm_malloc(
       sizeof(AbortBufferEntry) * _abort_buffer_size, 64);
-  for (int i = 0; i < _abort_buffer_size; i++) _abort_buffer[i].query = NULL;
+  for (int i = 0; i < _abort_buffer_size; i++) {
+    _abort_buffer[i].query = NULL;
+  }
   _abort_buffer_empty_slots = _abort_buffer_size;
   _abort_buffer_enable = (g_params["abort_buffer_enable"] == "true");
 }
@@ -99,8 +101,9 @@ RC thread_t::run() {
                 _abort_buffer_empty_slots++;
                 break;
               } else if (_abort_buffer_empty_slots == 0 &&
-                         _abort_buffer[i].ready_time < min_ready_time)
+                         _abort_buffer[i].ready_time < min_ready_time) {
                 min_ready_time = _abort_buffer[i].ready_time;
+              }
             }
           }
           if (m_query == NULL && _abort_buffer_empty_slots == 0) {
@@ -115,10 +118,14 @@ RC thread_t::run() {
               m_txn->set_ts(get_next_ts());
             }
           }
-          if (m_query != NULL) break;
+          if (m_query != NULL) {
+            break;
+          }
         }
       } else {
-        if (rc == RCOK) m_query = query_queue->get_next_query(_thd_id);
+        if (rc == RCOK) {
+          m_query = query_queue->get_next_query(_thd_id);
+        }
       }
     }
     INC_STATS(_thd_id, time_query, get_sys_clock() - starttime);
@@ -131,8 +138,9 @@ RC thread_t::run() {
 
     if constexpr ((cc_alg == CCAlg::Hstore && !HSTORE_LOCAL_TS) ||
                   cc_alg == CCAlg::Mvcc || cc_alg == CCAlg::Hekaton ||
-                  cc_alg == CCAlg::Timestamp)
+                  cc_alg == CCAlg::Timestamp) {
       m_txn->set_ts(get_next_ts());
+    }
 
     rc = RCOK;
     if constexpr (cc_alg == CCAlg::Hstore) {
@@ -187,9 +195,9 @@ RC thread_t::run() {
         drand48_r(&buffer, &r);
         penalty = r * ABORT_PENALTY;
       }
-      if (!_abort_buffer_enable || wl == WL::Test)
+      if (!_abort_buffer_enable || wl == WL::Test) {
         usleep(penalty / 1000);
-      else {
+      } else {
         assert(_abort_buffer_empty_slots > 0);
         for (int i = 0; i < _abort_buffer_size; i++) {
           if (_abort_buffer[i].query == NULL) {
@@ -218,7 +226,9 @@ RC thread_t::run() {
       m_txn->abort_cnt++;
     }
 
-    if (rc == FINISH) return rc;
+    if (rc == FINISH) {
+      return rc;
+    }
     if (!warmup_finish && txn_cnt >= WARMUP / g_thread_cnt) {
       stats.clear(get_thd_id());
       return FINISH;
@@ -226,7 +236,9 @@ RC thread_t::run() {
 
     if (warmup_finish && txn_cnt >= MAX_TXN_PER_PART) {
       assert(txn_cnt == MAX_TXN_PER_PART);
-      if (!ATOM_CAS(_wl->sim_done, false, true)) assert(_wl->sim_done);
+      if (!ATOM_CAS(_wl->sim_done, false, true)) {
+        assert(_wl->sim_done);
+      }
     }
     if (_wl->sim_done) {
       return FINISH;
@@ -277,10 +289,11 @@ RC thread_t::runTest(txn_man* txn) {
       return FINISH;
     } else if (g_test_case == CONFLICT) {
       rc = ((TestTxnMan*)txn)->run_txn(g_test_case, 0);
-      if (rc == RCOK)
+      if (rc == RCOK) {
         return FINISH;
-      else
+      } else {
         return rc;
+      }
     }
     assert(false);
     return RCOK;

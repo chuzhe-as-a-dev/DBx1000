@@ -49,10 +49,11 @@ RC TestTxnMan::testReadwrite(int access_num) {
     assert(strcmp(v4, "hello") == 0);
   }
   rc = finish(rc);
-  if (access_num == 0)
+  if (access_num == 0) {
     return RCOK;
-  else
+  } else {
     return FINISH;
+  }
 }
 
 RC TestTxnMan::testConflict(int access_num) {

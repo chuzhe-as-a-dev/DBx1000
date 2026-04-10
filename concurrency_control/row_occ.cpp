@@ -21,14 +21,15 @@ RC Row_occ::access(txn_man* txn, TsType type) {
   RC rc = RCOK;
   pthread_mutex_lock(_latch);
   if (type == R_REQ) {
-    if (txn->start_ts < wts)
+    if (txn->start_ts < wts) {
       rc = Abort;
-    else {
+    } else {
       txn->cur_row->copy(_row);
       rc = RCOK;
     }
-  } else
+  } else {
     assert(false);
+  }
   pthread_mutex_unlock(_latch);
   return rc;
 }
@@ -38,10 +39,11 @@ void Row_occ::latch() { pthread_mutex_lock(_latch); }
 // Validation check at commit time: the row must not have been written after
 // the txn's start_ts, otherwise the read was stale. (AI-generated)
 bool Row_occ::validate(uint64_t ts) {
-  if (ts < wts)
+  if (ts < wts) {
     return false;
-  else
+  } else {
     return true;
+  }
 }
 
 void Row_occ::write(row_t* data, uint64_t ts) {

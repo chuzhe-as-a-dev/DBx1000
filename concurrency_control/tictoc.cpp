@@ -14,10 +14,11 @@ RC txn_man::validate_tictoc() {
   int cur_rd_idx = 0;
   int cur_wr_idx = 0;
   for (int rid = 0; rid < row_cnt; rid++) {
-    if (accesses[rid]->type == WR)
+    if (accesses[rid]->type == WR) {
       write_set[cur_wr_idx++] = rid;
-    else
+    } else {
       read_set[cur_rd_idx++] = rid;
+    }
   }
 #if WR_VALIDATION_SEPARATE
   // bubble sort the write_set, in primary key order
@@ -33,7 +34,9 @@ RC txn_man::validate_tictoc() {
   }
 #else
   int sorted_set[row_cnt];
-  for (int i = 0; i < row_cnt; i++) sorted_set[i] = i;
+  for (int i = 0; i < row_cnt; i++) {
+    sorted_set[i] = i;
+  }
 
   for (int i = row_cnt - 1; i >= 1; i--) {
     for (int j = 0; j < i; j++) {
@@ -51,16 +54,18 @@ RC txn_man::validate_tictoc() {
   ts_t commit_wts = 0;
   for (int i = 0; i < row_cnt; i++) {
     Access* access = accesses[i];
-    if (access->type == RD && access->wts > commit_rts)
+    if (access->type == RD && access->wts > commit_rts) {
       commit_rts = access->wts;
-    else if (access->type == WR && access->rts + 1 > commit_wts)
+    } else if (access->type == WR && access->rts + 1 > commit_wts) {
       commit_wts = access->rts + 1;
+    }
   }
 #if ISOLATION_LEVEL == SERIALIZABLE || ISOLATION_LEVEL == REPEATABLE_READ
-  if (commit_rts > commit_wts)
+  if (commit_rts > commit_wts) {
     commit_wts = commit_rts;
-  else
+  } else {
     commit_rts = commit_wts;
+  }
 #endif
 
 #if WR_VALIDATION_SEPARATE
@@ -99,18 +104,21 @@ RC txn_man::validate_tictoc() {
       num_locks = 0;
       for (int i = 0; i < wr_cnt; i++) {
         row_t* row = accesses[write_set[i]]->orig_row;
-        if (!cc_mgr(row)->try_lock()) break;
+        if (!cc_mgr(row)->try_lock()) {
+          break;
+        }
         num_locks++;
         if (cc_mgr(row)->get_wts() != accesses[write_set[i]]->wts) {
           rc = Abort;
           goto final;
         }
       }
-      if (num_locks == wr_cnt)
+      if (num_locks == wr_cnt) {
         done = true;
-      else {
-        for (int i = 0; i < num_locks; i++)
+      } else {
+        for (int i = 0; i < num_locks; i++) {
           cc_mgr(accesses[write_set[i]]->orig_row)->release();
+        }
         if (_pre_abort) {
           num_locks = 0;
           for (int i = 0; i < wr_cnt; i++) {
@@ -154,8 +162,9 @@ RC txn_man::validate_tictoc() {
   }
   for (int i = 0; i < wr_cnt; i++) {
     row_t* row = accesses[write_set[i]]->orig_row;
-    if (cc_mgr(row)->get_rts() + 1 > commit_wts)
+    if (cc_mgr(row)->get_rts() + 1 > commit_wts) {
       commit_wts = cc_mgr(row)->get_rts() + 1;
+    }
   }
 
   assert(num_locks == wr_cnt);
@@ -216,15 +225,19 @@ RC txn_man::validate_tictoc() {
 final:
   if (rc == Abort) {
 #if WR_VALIDATION_SEPARATE
-    for (int i = 0; i < num_locks; i++)
+    for (int i = 0; i < num_locks; i++) {
       cc_mgr(accesses[write_set[i]]->orig_row)->release();
+    }
 #else
-    for (int i = 0; i < num_locks; i++)
+    for (int i = 0; i < num_locks; i++) {
       cc_mgr(accesses[sorted_set[i]]->orig_row)->release();
+    }
 #endif
     cleanup(rc);
   } else {
-    if (commit_wts > _max_wts) _max_wts = commit_wts;
+    if (commit_wts > _max_wts) {
+      _max_wts = commit_wts;
+    }
 
     if (_write_copy_ptr) {
       assert(false);
@@ -244,11 +257,15 @@ final:
 //			}
 #endif
     }
-    if (g_prt_lat_distr) stats.add_debug(get_thd_id(), commit_wts, 2);
+    if (g_prt_lat_distr) {
+      stats.add_debug(get_thd_id(), commit_wts, 2);
+    }
     cleanup(rc);
     if (_atomic_timestamp && rc == RCOK) {
       ts_t ts = glob_manager->get_ts(get_thd_id());
-      if (g_prt_lat_distr) stats.add_debug(get_thd_id(), ts, 1);
+      if (g_prt_lat_distr) {
+        stats.add_debug(get_thd_id(), ts, 1);
+      }
     }
   }
   return rc;
@@ -256,5 +273,7 @@ final:
 
 void txn_man::update_max_wts(ts_t max_wts) {
   assert(false);
-  if (max_wts > _max_wts) _max_wts = max_wts;
+  if (max_wts > _max_wts) {
+    _max_wts = max_wts;
+  }
 }

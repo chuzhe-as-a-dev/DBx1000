@@ -38,15 +38,19 @@ RC PartMan::lock(txn_man* txn) {
       if (txn->get_ts() > waiters[i - 1]->get_ts()) {
         waiters[i] = txn;
         break;
-      } else
+      } else {
         waiters[i] = waiters[i - 1];
+      }
     }
-    if (i == 0) waiters[i] = txn;
+    if (i == 0) {
+      waiters[i] = txn;
+    }
     waiter_cnt++;
     ATOM_ADD(txn->ready_part, 1);
     rc = WAIT;
-  } else
+  } else {
     rc = Abort;
+  }
   pthread_mutex_unlock(&latch);
   return rc;
 }
@@ -58,9 +62,9 @@ RC PartMan::lock(txn_man* txn) {
 void PartMan::unlock(txn_man* txn) {
   pthread_mutex_lock(&latch);
   if (txn == owner) {
-    if (waiter_cnt == 0)
+    if (waiter_cnt == 0) {
       owner = NULL;
-    else {
+    } else {
       owner = waiters[0];
       for (UInt32 i = 0; i < waiter_cnt - 1; i++) {
         assert(waiters[i]->get_ts() < waiters[i + 1]->get_ts());
@@ -72,8 +76,12 @@ void PartMan::unlock(txn_man* txn) {
   } else {
     bool find = false;
     for (UInt32 i = 0; i < waiter_cnt; i++) {
-      if (waiters[i] == txn) find = true;
-      if (find && i < waiter_cnt - 1) waiters[i] = waiters[i + 1];
+      if (waiters[i] == txn) {
+        find = true;
+      }
+      if (find && i < waiter_cnt - 1) {
+        waiters[i] = waiters[i + 1];
+      }
     }
     ATOM_SUB(txn->ready_part, 1);
     assert(find);
@@ -88,7 +96,9 @@ void PartMan::unlock(txn_man* txn) {
 
 void Plock::init() {
   ARR_PTR(PartMan, part_mans, g_part_cnt);
-  for (UInt32 i = 0; i < g_part_cnt; i++) part_mans[i]->init();
+  for (UInt32 i = 0; i < g_part_cnt; i++) {
+    part_mans[i]->init();
+  }
 }
 
 // Acquires all partition locks for a transaction.
@@ -105,7 +115,9 @@ RC Plock::lock(txn_man* txn, uint64_t* parts, uint64_t part_cnt) {
   for (i = 0; i < part_cnt; i++) {
     uint64_t part_id = parts[i];
     rc = part_mans[part_id]->lock(txn);
-    if (rc == Abort) break;
+    if (rc == Abort) {
+      break;
+    }
   }
   if (rc == Abort) {
     for (UInt32 j = 0; j < i; j++) {

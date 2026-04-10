@@ -84,8 +84,9 @@ RC OptCC::per_row_validate(txn_man* txn) {
     rc = Abort;
   }
 
-  for (int i = 0; i < lock_cnt; i++)
+  for (int i = 0; i < lock_cnt; i++) {
     cc_mgr(txn->accesses[i]->orig_row)->release();
+  }
   return rc;
 }
 
@@ -122,10 +123,14 @@ RC OptCC::central_validate(txn_man* txn) {
   his = history;
   pthread_mutex_unlock(&latch);
   if (finish_tn > start_tn) {
-    while (his && his->tn > finish_tn) his = his->next;
+    while (his && his->tn > finish_tn) {
+      his = his->next;
+    }
     while (his && his->tn > start_tn) {
       valid = test_valid(his, rset);
-      if (!valid) goto final;
+      if (!valid) {
+        goto final;
+      }
       his = his->next;
     }
   }
@@ -136,10 +141,14 @@ RC OptCC::central_validate(txn_man* txn) {
     if (valid) {
       valid = test_valid(wact, wset);
     }
-    if (!valid) goto final;
+    if (!valid) {
+      goto final;
+    }
   }
 final:
-  if (valid) txn->cleanup(RCOK);
+  if (valid) {
+    txn->cleanup(RCOK);
+  }
   mem_allocator.free(rset, sizeof(set_ent));
 
   if (!readonly) {
@@ -152,13 +161,16 @@ final:
       act = act->next;
     }
     assert(act->txn == txn);
-    if (prev != NULL)
+    if (prev != NULL) {
       prev->next = act->next;
-    else
+    } else {
       active = act->next;
+    }
     active_len--;
     if (valid) {
-      if (history) assert(history->tn == tnc);
+      if (history) {
+        assert(history->tn == tnc);
+      }
       tnc++;
       wset->tn = tnc;
       STACK_PUSH(history, wset);
@@ -187,10 +199,11 @@ RC OptCC::get_rw_set(txn_man* txn, set_ent*& rset, set_ent*& wset) {
 
   UInt32 n = 0, m = 0;
   for (int i = 0; i < txn->row_cnt; i++) {
-    if (txn->accesses[i]->type == WR)
+    if (txn->accesses[i]->type == WR) {
       wset->rows[n++] = txn->accesses[i]->orig_row;
-    else
+    } else {
       rset->rows[m++] = txn->accesses[i]->orig_row;
+    }
   }
 
   assert(n == wset->set_size);
@@ -199,11 +212,12 @@ RC OptCC::get_rw_set(txn_man* txn, set_ent*& rset, set_ent*& wset) {
 }
 
 bool OptCC::test_valid(set_ent* set1, set_ent* set2) {
-  for (UInt32 i = 0; i < set1->set_size; i++)
+  for (UInt32 i = 0; i < set1->set_size; i++) {
     for (UInt32 j = 0; j < set2->set_size; j++) {
       if (set1->rows[i] == set2->rows[j]) {
         return false;
       }
     }
+  }
   return true;
 }

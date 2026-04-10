@@ -38,7 +38,9 @@ void ycsb_query::calculateDenom() {
 // to avoid recomputing the full sum every time zipf() is called. (AI-generated)
 double ycsb_query::zeta(uint64_t n, double theta) {
   double sum = 0;
-  for (uint64_t i = 1; i <= n; i++) sum += pow(1.0 / i, theta);
+  for (uint64_t i = 1; i <= n; i++) {
+    sum += pow(1.0 / i, theta);
+  }
   return sum;
 }
 
@@ -56,8 +58,12 @@ uint64_t ycsb_query::zipf(uint64_t n, double theta) {
   double u;
   drand48_r(&_query_thd->buffer, &u);
   double uz = u * zetan;
-  if (uz < 1) return 1;
-  if (uz < 1 + pow(0.5, theta)) return 2;
+  if (uz < 1) {
+    return 1;
+  }
+  if (uz < 1 + pow(0.5, theta)) {
+    return 2;
+  }
   return 1 + (uint64_t)(n * pow(eta * u - eta + 1, alpha));
 }
 
@@ -84,22 +90,28 @@ void ycsb_query::gen_requests(uint64_t thd_id, workload* h_wl) {
   lrand48_r(&_query_thd->buffer, &rint64);
   if (r < g_perc_multi_part) {
     for (UInt32 i = 0; i < g_part_per_txn; i++) {
-      if (i == 0 && FIRST_PART_LOCAL)
+      if (i == 0 && FIRST_PART_LOCAL) {
         part_to_access[part_num] = thd_id % g_virtual_part_cnt;
-      else {
+      } else {
         part_to_access[part_num] = rint64 % g_virtual_part_cnt;
       }
       UInt32 j;
-      for (j = 0; j < part_num; j++)
-        if (part_to_access[part_num] == part_to_access[j]) break;
-      if (j == part_num) part_num++;
+      for (j = 0; j < part_num; j++) {
+        if (part_to_access[part_num] == part_to_access[j]) {
+          break;
+        }
+      }
+      if (j == part_num) {
+        part_num++;
+      }
     }
   } else {
     part_num = 1;
-    if (FIRST_PART_LOCAL)
+    if (FIRST_PART_LOCAL) {
       part_to_access[0] = thd_id % g_part_cnt;
-    else
+    } else {
       part_to_access[0] = rint64 % g_part_cnt;
+    }
   }
 
   int rid = 0;
@@ -129,19 +141,23 @@ void ycsb_query::gen_requests(uint64_t thd_id, workload* h_wl) {
       if (all_keys.find(req->key) == all_keys.end()) {
         all_keys.insert(req->key);
         access_cnt++;
-      } else
+      } else {
         continue;
+      }
     } else {
       bool conflict = false;
       for (UInt32 i = 0; i < req->scan_len; i++) {
         primary_key = (row_id + i) * g_part_cnt + part_id;
-        if (all_keys.find(primary_key) != all_keys.end()) conflict = true;
+        if (all_keys.find(primary_key) != all_keys.end()) {
+          conflict = true;
+        }
       }
-      if (conflict)
+      if (conflict) {
         continue;
-      else {
-        for (UInt32 i = 0; i < req->scan_len; i++)
+      } else {
+        for (UInt32 i = 0; i < req->scan_len; i++) {
           all_keys.insert((row_id + i) * g_part_cnt + part_id);
+        }
         access_cnt += SCAN_LEN;
       }
     }
@@ -151,14 +167,17 @@ void ycsb_query::gen_requests(uint64_t thd_id, workload* h_wl) {
 
   // Sort the requests in key order.
   if (g_key_order) {
-    for (int i = request_cnt - 1; i > 0; i--)
-      for (int j = 0; j < i; j++)
+    for (int i = request_cnt - 1; i > 0; i--) {
+      for (int j = 0; j < i; j++) {
         if (requests[j].key > requests[j + 1].key) {
           ycsb_request tmp = requests[j];
           requests[j] = requests[j + 1];
           requests[j + 1] = tmp;
         }
-    for (UInt32 i = 0; i < request_cnt - 1; i++)
+      }
+    }
+    for (UInt32 i = 0; i < request_cnt - 1; i++) {
       assert(requests[i].key < requests[i + 1].key);
+    }
   }
 }

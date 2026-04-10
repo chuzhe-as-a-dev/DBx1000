@@ -40,7 +40,9 @@ RC ycsb_txn_man::run_txn(base_query* query) {
 #if INDEX_STRUCT == IDX_BTREE
       else {
         _wl->the_index->index_next(get_thd_id(), m_item);
-        if (m_item == NULL) break;
+        if (m_item == NULL) {
+          break;
+        }
       }
 #endif
       row_t* row = ((row_t*)m_item->location);
@@ -70,8 +72,9 @@ RC ycsb_txn_man::run_txn(base_query* query) {
       }
 
       iteration++;
-      if (req->rtype == RD || req->rtype == WR || iteration == req->scan_len)
+      if (req->rtype == RD || req->rtype == WR || iteration == req->scan_len) {
         finish_req = true;
+      }
     }
   }
 final:

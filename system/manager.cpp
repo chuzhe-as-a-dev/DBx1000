@@ -14,15 +14,18 @@ void Manager::init() {
   *_epoch = 0;
   *_last_epoch_update_time = 0;
   all_ts = (ts_t volatile**)_mm_malloc(sizeof(ts_t*) * g_thread_cnt, 64);
-  for (uint32_t i = 0; i < g_thread_cnt; i++)
+  for (uint32_t i = 0; i < g_thread_cnt; i++) {
     all_ts[i] = (ts_t*)_mm_malloc(sizeof(ts_t), 64);
+  }
 
   _all_txns = new txn_man*[g_thread_cnt];
   for (UInt32 i = 0; i < g_thread_cnt; i++) {
     *all_ts[i] = UINT64_MAX;
     _all_txns[i] = NULL;
   }
-  for (UInt32 i = 0; i < BUCKET_CNT; i++) pthread_mutex_init(&mutexes[i], NULL);
+  for (UInt32 i = 0; i < BUCKET_CNT; i++) {
+    pthread_mutex_init(&mutexes[i], NULL);
+  }
 }
 
 // Allocates a globally unique, monotonically increasing timestamp.
@@ -36,7 +39,9 @@ void Manager::init() {
 //               values without any shared state, at the cost of being tied
 //               to real time. (AI-generated)
 uint64_t Manager::get_ts(uint64_t thread_id) {
-  if (g_ts_batch_alloc) assert(g_ts_alloc == TS_CAS);
+  if (g_ts_batch_alloc) {
+    assert(g_ts_alloc == TS_CAS);
+  }
   uint64_t time;
   uint64_t starttime = get_sys_clock();
   switch (g_ts_alloc) {
@@ -46,10 +51,11 @@ uint64_t Manager::get_ts(uint64_t thread_id) {
       pthread_mutex_unlock(&ts_mutex);
       break;
     case TS_CAS:
-      if (g_ts_batch_alloc)
+      if (g_ts_batch_alloc) {
         time = ATOM_FETCH_ADD((*timestamp), g_ts_batch_num);
-      else
+      } else {
         time = ATOM_FETCH_ADD((*timestamp), 1);
+      }
       break;
     case TS_HW:
 #ifndef NOGRAPHITE
@@ -81,9 +87,14 @@ ts_t Manager::get_min_ts(uint64_t tid) {
   uint64_t last_time = _last_min_ts_time;
   if (tid == 0 && now - last_time > MIN_TS_INTVL) {
     ts_t min = UINT64_MAX;
-    for (UInt32 i = 0; i < g_thread_cnt; i++)
-      if (*all_ts[i] < min) min = *all_ts[i];
-    if (min > _min_ts) _min_ts = min;
+    for (UInt32 i = 0; i < g_thread_cnt; i++) {
+      if (*all_ts[i] < min) {
+        min = *all_ts[i];
+      }
+    }
+    if (min > _min_ts) {
+      _min_ts = min;
+    }
   }
   return _min_ts;
 }

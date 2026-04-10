@@ -24,8 +24,8 @@ class base_query;
 //   txn->get_ts() / set_ts() ts_t   — transaction timestamp
 //
 // row_t fields:
-//   row->cc_row_state       void*    — opaque per-row state; hook owns lifecycle
-//   row->get_data()         char*    — row data buffer
+//   row->cc_row_state       void*    — opaque per-row state; hook owns
+//   lifecycle row->get_data()         char*    — row data buffer
 //   row->get_table()        table_t* — table metadata
 //   row->get_part_id()      uint64_t — partition ID
 //   row->copy(src)          void     — copy data from src row

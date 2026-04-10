@@ -1,8 +1,8 @@
 // cc_hooks_no_wait.cpp — NO_WAIT 2PL implementation of the cc_hooks interface.
 //
-// Per-row state: pthread_rwlock (SH for reads, EX for writes) + version counter.
-// cc_pre_op: tryrdlock for RD/SCAN, trywrlock for WR. Abort on contention.
-// cc_post_op: noop — workload operates on orig_row under lock.
+// Per-row state: pthread_rwlock (SH for reads, EX for writes) + version
+// counter. cc_pre_op: tryrdlock for RD/SCAN, trywrlock for WR. Abort on
+// contention. cc_post_op: noop — workload operates on orig_row under lock.
 // cc_pre_commit: noop — all locks still held.
 // cc_release_op: increment version on committed write (WR), unlock.
 
@@ -52,9 +52,13 @@ RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {
   (void)op_idx;
   RowCCState* s = (RowCCState*)orig_row->cc_row_state;
   if (type == WR) {
-    if (pthread_rwlock_trywrlock(&s->rwlock) != 0) return Abort;
+    if (pthread_rwlock_trywrlock(&s->rwlock) != 0) {
+      return Abort;
+    }
   } else {
-    if (pthread_rwlock_tryrdlock(&s->rwlock) != 0) return Abort;
+    if (pthread_rwlock_tryrdlock(&s->rwlock) != 0) {
+      return Abort;
+    }
   }
   return RCOK;
 }

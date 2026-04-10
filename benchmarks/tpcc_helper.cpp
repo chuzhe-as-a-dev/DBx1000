@@ -26,8 +26,9 @@ uint64_t orderPrimaryKey(uint64_t w_id, uint64_t d_id, uint64_t o_id) {
 uint64_t custNPKey(char* c_last, uint64_t c_d_id, uint64_t c_w_id) {
   uint64_t key = 0;
   char offset = 'A';
-  for (uint32_t i = 0; i < strlen(c_last); i++)
+  for (uint32_t i = 0; i < strlen(c_last); i++) {
     key = (key << 2) + (c_last[i] - offset);
+  }
   key = key << 3;
   key += c_w_id * DIST_PER_WARE + c_d_id;
   return key;
@@ -95,8 +96,12 @@ uint64_t MakeAlphaString(int min, int max, char* str, uint64_t thd_id) {
                       'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
                       'U', 'V', 'W', 'X', 'Y', 'Z'};
   uint64_t cnt = URand(min, max, thd_id);
-  for (uint32_t i = 0; i < cnt; i++) str[i] = char_list[URand(0L, 60L, thd_id)];
-  for (int i = cnt; i < max; i++) str[i] = '\0';
+  for (uint32_t i = 0; i < cnt; i++) {
+    str[i] = char_list[URand(0L, 60L, thd_id)];
+  }
+  for (int i = cnt; i < max; i++) {
+    str[i] = '\0';
+  }
 
   return cnt;
 }

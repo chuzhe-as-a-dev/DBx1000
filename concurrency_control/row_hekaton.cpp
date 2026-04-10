@@ -13,7 +13,9 @@ void Row_hekaton::init(row_t* row) {
 
   _write_history =
       (WriteHisEntry*)_mm_malloc(sizeof(WriteHisEntry) * _his_len, 64);
-  for (uint32_t i = 0; i < _his_len; i++) _write_history[i].row = NULL;
+  for (uint32_t i = 0; i < _his_len; i++) {
+    _write_history[i].row = NULL;
+  }
   _write_history[0].row = row;
   _write_history[0].begin_txn = false;
   _write_history[0].end_txn = false;
@@ -50,7 +52,9 @@ void Row_hekaton::doubleHistory() {
 RC Row_hekaton::access(txn_man* txn, TsType type, row_t* row) {
   RC rc = RCOK;
   ts_t ts = txn->get_ts();
-  while (!ATOM_CAS(blatch, false, true)) PAUSE
+  while (!ATOM_CAS(blatch, false, true)) {
+    PAUSE
+  }
   assert(_write_history[_his_latest].end == INF ||
          _write_history[_his_latest].end_txn);
   if (type == R_REQ) {
@@ -79,7 +83,9 @@ RC Row_hekaton::access(txn_man* txn, TsType type, row_t* row) {
           find = true;
           break;
         }
-        if (i == _his_oldest) break;
+        if (i == _his_oldest) {
+          break;
+        }
       }
       assert(find);
       (void)find;
@@ -101,8 +107,9 @@ RC Row_hekaton::access(txn_man* txn, TsType type, row_t* row) {
       res_row->copy(_write_history[_his_latest].row);
       txn->cur_row = res_row;
     }
-  } else
+  } else {
     assert(false);
+  }
 
   blatch = false;
   return rc;
@@ -120,10 +127,10 @@ uint32_t Row_hekaton::reserveRow(txn_man* txn) {
     }
   }
 
-  if ((_his_latest + 1) % _his_len != _his_oldest)
+  if ((_his_latest + 1) % _his_len != _his_oldest) {
     // _write_history is not full, return the next entry.
     idx = (_his_latest + 1) % _his_len;
-  else {
+  } else {
     // write_history is already full
     // If _his_len is small, double it.
     if (_his_len < g_thread_cnt) {
@@ -147,7 +154,9 @@ uint32_t Row_hekaton::reserveRow(txn_man* txn) {
 
 RC Row_hekaton::prepare_read(txn_man* txn, row_t* row, ts_t commit_ts) {
   RC rc;
-  while (!ATOM_CAS(blatch, false, true)) PAUSE
+  while (!ATOM_CAS(blatch, false, true)) {
+    PAUSE
+  }
   // TODO may pass in a pointer to the history entry to reduce the following
   // scan overhead.
   uint32_t idx = _his_latest;
@@ -156,10 +165,10 @@ RC Row_hekaton::prepare_read(txn_man* txn, row_t* row, ts_t commit_ts) {
       if (txn->get_ts() < _write_history[idx].begin) {
         rc = Abort;
       } else if (!_write_history[idx].end_txn &&
-                 _write_history[idx].end > commit_ts)
+                 _write_history[idx].end > commit_ts) {
         rc = RCOK;
-      else if (!_write_history[idx].end_txn &&
-               _write_history[idx].end < commit_ts) {
+      } else if (!_write_history[idx].end_txn &&
+                 _write_history[idx].end < commit_ts) {
         rc = Abort;
       } else {
         // TODO. if the end is a txn id, should check that status of that txn.
@@ -179,7 +188,9 @@ RC Row_hekaton::prepare_read(txn_man* txn, row_t* row, ts_t commit_ts) {
 }
 
 void Row_hekaton::post_process(txn_man* txn, ts_t commit_ts, RC rc) {
-  while (!ATOM_CAS(blatch, false, true)) PAUSE
+  while (!ATOM_CAS(blatch, false, true)) {
+    PAUSE
+  }
 
   WriteHisEntry* entry = &_write_history[(_his_latest + 1) % _his_len];
   assert(entry->begin_txn && entry->begin == txn->get_txn_id());
@@ -192,8 +203,9 @@ void Row_hekaton::post_process(txn_man* txn, ts_t commit_ts, RC rc) {
     entry->end = INF;
     _his_latest = (_his_latest + 1) % _his_len;
     assert(_his_latest != _his_oldest);
-  } else
+  } else {
     _write_history[_his_latest].end = INF;
+  }
 
   blatch = false;
 }

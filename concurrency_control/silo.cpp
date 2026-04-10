@@ -12,10 +12,11 @@ RC txn_man::validate_silo() {
   int read_set[row_cnt - wr_cnt];
   int cur_rd_idx = 0;
   for (int rid = 0; rid < row_cnt; rid++) {
-    if (accesses[rid]->type == WR)
+    if (accesses[rid]->type == WR) {
       write_set[cur_wr_idx++] = rid;
-    else
+    } else {
       read_set[cur_rd_idx++] = rid;
+    }
   }
 
   // bubble sort the write_set, in primary key order
@@ -56,7 +57,9 @@ RC txn_man::validate_silo() {
       num_locks = 0;
       for (int i = 0; i < wr_cnt; i++) {
         row_t* row = accesses[write_set[i]]->orig_row;
-        if (!cc_mgr(row)->try_lock()) break;
+        if (!cc_mgr(row)->try_lock()) {
+          break;
+        }
         cc_mgr(row)->assert_lock();
         num_locks++;
         if (cc_mgr(row)->get_tid() != accesses[write_set[i]]->tid) {
@@ -64,11 +67,12 @@ RC txn_man::validate_silo() {
           goto final;
         }
       }
-      if (num_locks == wr_cnt)
+      if (num_locks == wr_cnt) {
         done = true;
-      else {
-        for (int i = 0; i < num_locks; i++)
+      } else {
+        for (int i = 0; i < num_locks; i++) {
           cc_mgr(accesses[write_set[i]]->orig_row)->release();
+        }
         if (_pre_abort) {
           num_locks = 0;
           for (int i = 0; i < wr_cnt; i++) {
@@ -111,7 +115,9 @@ RC txn_man::validate_silo() {
       rc = Abort;
       goto final;
     }
-    if (access->tid > max_tid) max_tid = access->tid;
+    if (access->tid > max_tid) {
+      max_tid = access->tid;
+    }
   }
   // validate rows in the write set
   for (int i = 0; i < wr_cnt; i++) {
@@ -121,16 +127,20 @@ RC txn_man::validate_silo() {
       rc = Abort;
       goto final;
     }
-    if (access->tid > max_tid) max_tid = access->tid;
+    if (access->tid > max_tid) {
+      max_tid = access->tid;
+    }
   }
-  if (max_tid > _cur_tid)
+  if (max_tid > _cur_tid) {
     _cur_tid = max_tid + 1;
-  else
+  } else {
     _cur_tid++;
+  }
 final:
   if (rc == Abort) {
-    for (int i = 0; i < num_locks; i++)
+    for (int i = 0; i < num_locks; i++) {
       cc_mgr(accesses[write_set[i]]->orig_row)->release();
+    }
     cleanup(rc);
   } else {
     for (int i = 0; i < wr_cnt; i++) {

@@ -33,10 +33,11 @@ uint64_t get_part_id(void* addr) {
 }
 
 uint64_t key_to_part(uint64_t key) {
-  if (g_part_alloc)
+  if (g_part_alloc) {
     return key % g_part_cnt;
-  else
+  } else {
     return 0;
+  }
 }
 
 void myrand::init(uint64_t seed) { this->seed = seed; }

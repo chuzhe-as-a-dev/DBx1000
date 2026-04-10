@@ -48,7 +48,9 @@ void VLLMan::vllMainLoop(txn_man* txn, base_query* query) {
     INC_STATS(txn->get_thd_id(), debug5, tt5);
 
     TxnQEntry* front = _txn_queue;
-    if (front) front_txn = front->txn;
+    if (front) {
+      front_txn = front->txn;
+    }
     // only one worker thread can execute the txn.
     if (front_txn && front_txn->vll_txn_type == VLL_Blocked) {
       front_txn->vll_txn_type = VLL_Free;
@@ -78,23 +80,27 @@ void VLLMan::vllMainLoop(txn_man* txn, base_query* query) {
 // (AI-generated)
 int VLLMan::beginTxn(txn_man* txn, base_query* query, TxnQEntry*& entry) {
   int ret = -1;
-  if (_txn_queue_size >= TXN_QUEUE_SIZE_LIMIT) ret = 3;
+  if (_txn_queue_size >= TXN_QUEUE_SIZE_LIMIT) {
+    ret = 3;
+  }
 
   txn->vll_txn_type = VLL_Free;
   assert(WORKLOAD == YCSB);
 
   for (int rid = 0; rid < txn->row_cnt; rid++) {
     access_t type = txn->accesses[rid]->type;
-    if (cc_mgr(txn->accesses[rid]->orig_row)->insert_access(type))
+    if (cc_mgr(txn->accesses[rid]->orig_row)->insert_access(type)) {
       txn->vll_txn_type = VLL_Blocked;
+    }
   }
 
   entry = getQEntry();
   LIST_PUT_TAIL(_txn_queue, _txn_queue_tail, entry);
-  if (txn->vll_txn_type == VLL_Blocked)
+  if (txn->vll_txn_type == VLL_Blocked) {
     ret = 1;
-  else
+  } else {
     ret = 2;
+  }
   pthread_mutex_unlock(&_mutex);
   return ret;
 }
