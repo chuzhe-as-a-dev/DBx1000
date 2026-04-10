@@ -446,22 +446,11 @@ static RC piece_validate_and_expose(txn_man* txn) {
         wlocks.unlock_all(tms);
         return Abort;
       }
-      v &= ~LOCK_BIT;
+      v &= ~LOCK_BIT;  // ignore lock bit for later version comparison
     }
     if (tms->reads[i].tid != v) {
-      // Tid changed — but if we also wrote this row (in a prior piece),
-      // our own piece validation may have advanced the tid.
-      bool own_write2 = false;
-      for (int j = 0; j < tms->write_count; j++) {
-        if (tms->writes[j].orig_row == tms->reads[i].row) {
-          own_write2 = true;
-          break;
-        }
-      }
-      if (!own_write2) {
-        wlocks.unlock_all(tms);
-        return Abort;
-      }
+      wlocks.unlock_all(tms);
+      return Abort;
     }
   }
   // Compute commit TID
@@ -543,20 +532,11 @@ static RC final_commit(txn_man* txn) {
         wlocks.unlock_all(tms);
         return Abort;
       }
-      v &= ~LOCK_BIT;
+      v &= ~LOCK_BIT;  // ignore lock bit for later version comparison
     }
     if (tms->reads[i].tid != v) {
-      bool own_write2 = false;
-      for (int j = 0; j < tms->write_count; j++) {
-        if (tms->writes[j].orig_row == tms->reads[i].row) {
-          own_write2 = true;
-          break;
-        }
-      }
-      if (!own_write2) {
-        wlocks.unlock_all(tms);
-        return Abort;
-      }
+      wlocks.unlock_all(tms);
+      return Abort;
     }
   }
   // Compute final commit TID
