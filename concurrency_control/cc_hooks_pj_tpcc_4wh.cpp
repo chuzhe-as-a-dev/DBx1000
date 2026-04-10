@@ -203,8 +203,8 @@ struct ReadEntry {
 struct WriteEntry {
   row_t* orig_row;
   row_t* local_copy;
-  int policy_index;  // index into POLICY[], for write_visibility check
-  bool exposed;      // true if dirty data has been exposed via early-validation
+  bool to_expose;  // true if write_visibility == PUBLIC (expose at validation)
+  bool exposed;    // true if dirty data has been exposed via early-validation
 };
 #define MAX_ACCESSES 64
 #define MAX_DEPS 64
@@ -466,7 +466,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
         return Abort;
       }
     }
-    if (POLICY[w.policy_index].write_visibility == 1) {
+    if (w.to_expose) {
       // PUBLIC: expose dirty data so other txns can dirty-read it.
       uint32_t sz = w.orig_row->get_tuple_size();
       DirtyEntry* entry = (DirtyEntry*)malloc(sizeof(DirtyEntry));
@@ -774,9 +774,9 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
     local_copy->copy(orig);
     *local_row_out = local_copy;
     txn->accesses[txn->row_cnt]->data = local_copy;
-    int pidx = static_cast<int>(policy - POLICY);
+    bool to_expose = (policy->write_visibility == 1);
     if (tms->write_count < MAX_ACCESSES) {
-      tms->writes[tms->write_count] = {orig, local_copy, pidx, false};
+      tms->writes[tms->write_count] = {orig, local_copy, to_expose, false};
       tms->write_count++;
     }
     if (tms->read_count < MAX_ACCESSES) {
