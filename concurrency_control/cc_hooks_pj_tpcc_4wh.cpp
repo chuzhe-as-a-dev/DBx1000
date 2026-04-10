@@ -4,6 +4,7 @@
 
 #include <mm_malloc.h>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdlib>
@@ -368,6 +369,39 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
   return RCOK;
 }
 
+// ---- Write-set locking helper ----
+// Locks write-set rows in address order to prevent deadlocks. On failure
+// (try_lock fails), unlocks all already-held locks and returns false.
+struct WriteLockSet {
+  int indices[MAX_ACCESSES];  // write indices sorted by orig_row address
+  int count = 0;
+
+  // Sort writes[begin..end) by orig_row address and try to lock all.
+  bool lock_sorted(TxnManState* tms, int begin, int end) {
+    count = end - begin;
+    for (int i = 0; i < count; i++) indices[i] = begin + i;
+    std::sort(indices, indices + count, [&](int a, int b) {
+      return (uintptr_t)tms->writes[a].orig_row <
+             (uintptr_t)tms->writes[b].orig_row;
+    });
+    for (int i = 0; i < count; i++) {
+      RowState* rs = (RowState*)tms->writes[indices[i]].orig_row->cc_row_state;
+      if (!try_lock(rs)) {
+        for (int j = 0; j < i; j++)
+          unlock(
+              (RowState*)tms->writes[indices[j]].orig_row->cc_row_state);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void unlock_all(TxnManState* tms) {
+    for (int i = 0; i < count; i++)
+      unlock((RowState*)tms->writes[indices[i]].orig_row->cc_row_state);
+  }
+};
+
 // ---- Piece validate+expose (NOT install to orig_row) ----
 // Validates reads/writes in the current piece and, for PUBLIC writes,
 // exposes dirty data so other txns can dirty-read it.
@@ -379,18 +413,9 @@ static RC piece_validate_and_expose(txn_man* txn) {
   int pre = tms->read_count;
   int pw = tms->piece_write_start;
   int pwe = tms->write_count;
-  // Lock all write rows in this piece
-  int locked = 0;
-  for (int i = pw; i < pwe; i++) {
-    RowState* rs = (RowState*)tms->writes[i].orig_row->cc_row_state;
-    if (!try_lock(rs)) {
-      for (int j = pw; j < pw + locked; j++) {
-        unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
-      }
-      return Abort;
-    }
-    locked++;
-  }
+  // Lock write rows in address order to prevent deadlocks.
+  WriteLockSet wlocks;
+  if (!wlocks.lock_sorted(tms, pw, pwe)) return Abort;
   // Validate reads in this piece.
   // Correctness: we check that tid_word hasn't changed since our read.
   // - Clean reads: tid_word change means another txn committed or exposed a
@@ -417,9 +442,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
         }
       }
       if (!own_write) {
-        for (int j = pw; j < pw + locked; j++) {
-          unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
-        }
+        wlocks.unlock_all(tms);
         return Abort;
       }
       v &= ~LOCK_BIT;
@@ -435,9 +458,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
         }
       }
       if (!own_write2) {
-        for (int j = pw; j < pw + locked; j++) {
-          unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
-        }
+        wlocks.unlock_all(tms);
         return Abort;
       }
     }
@@ -466,9 +487,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
       if (e->writer != txn &&
           !add_dependency(tms, e->writer, e->txn_id,
                           get_tms(e->writer)->txn_type, false)) {
-        for (int j = pw; j < pw + locked; j++) {
-          unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
-        }
+        wlocks.unlock_all(tms);
         return Abort;
       }
     }
@@ -487,9 +506,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
     // PRIVATE writes: w.exposed remains false, no dirty_head entry.
     rs->tid_word = tms->commit_tid | LOCK_BIT;
   }
-  for (int i = pw; i < pwe; i++) {
-    unlock((RowState*)tms->writes[i].orig_row->cc_row_state);
-  }
+  wlocks.unlock_all(tms);
   tms->piece_read_start = tms->read_count;
   tms->piece_write_start = tms->write_count;
   return RCOK;
@@ -498,24 +515,13 @@ static RC piece_validate_and_expose(txn_man* txn) {
 // ---- Final commit: validate ALL + copy local→orig atomically ----
 static RC final_commit(txn_man* txn) {
   TxnManState* tms = get_tms(txn);
-  // Lock all write rows
-  int locked = 0;
-  for (int i = 0; i < tms->write_count; i++) {
-    RowState* rs = (RowState*)tms->writes[i].orig_row->cc_row_state;
-    if (!try_lock(rs)) {
-      for (int j = 0; j < locked; j++) {
-        unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
-      }
-      return Abort;
-    }
-    locked++;
-  }
+  // Lock write rows in address order to prevent deadlocks.
+  WriteLockSet wlocks;
+  if (!wlocks.lock_sorted(tms, 0, tms->write_count)) return Abort;
   // Validate all reads (same tid_word approach as piece validation; see
   // comment in piece_validate_and_expose for correctness reasoning).
   for (int i = 0; i < tms->read_count; i++) {
-    if (tms->reads[i].dirty) {
-      continue;
-    }
+    if (tms->reads[i].dirty) continue;
     RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
     uint64_t v = rs->tid_word;
     if (v & LOCK_BIT) {
@@ -527,16 +533,12 @@ static RC final_commit(txn_man* txn) {
         }
       }
       if (!own_write) {
-        for (int j = 0; j < locked; j++) {
-          unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
-        }
+        wlocks.unlock_all(tms);
         return Abort;
       }
       v &= ~LOCK_BIT;
     }
     if (tms->reads[i].tid != v) {
-      // Tid changed — but if we also wrote this row, our own piece
-      // validation may have advanced the tid. That's not a conflict.
       bool own_write2 = false;
       for (int j = 0; j < tms->write_count; j++) {
         if (tms->writes[j].orig_row == tms->reads[i].row) {
@@ -545,9 +547,7 @@ static RC final_commit(txn_man* txn) {
         }
       }
       if (!own_write2) {
-        for (int j = 0; j < locked; j++) {
-          unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
-        }
+        wlocks.unlock_all(tms);
         return Abort;
       }
     }
@@ -589,9 +589,7 @@ static RC final_commit(txn_man* txn) {
       pp = &(*pp)->next;
     }
   }
-  for (int i = 0; i < tms->write_count; i++) {
-    unlock((RowState*)tms->writes[i].orig_row->cc_row_state);
-  }
+  wlocks.unlock_all(tms);
   tms->status = TXN_COMMITTED;
   tms->step = (tms->txn_type == TXN_NEW_ORDER) ? 11 : 7;
   return RCOK;
