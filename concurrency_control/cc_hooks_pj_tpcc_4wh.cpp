@@ -224,13 +224,13 @@ struct TxnManState {
   // Slot validity: txn_id == 0 means uninitialized (never written),
   // txn_id == HISTORY_UPDATING means write in progress, otherwise valid.
   // Readers skip slots where txn_id doesn't match the target.
-  static constexpr int HISTORY_SIZE = 8;
-  static constexpr uint64_t HISTORY_UPDATING = UINT64_MAX;
   struct TxnResult {
     volatile uint64_t txn_id;  // 0=uninitialized, UPDATING=write in progress
     volatile int status;
   };
-  TxnResult history[HISTORY_SIZE] = {};
+  static constexpr int HISTORY_SIZE = 8;
+  static constexpr uint64_t HISTORY_UPDATING = UINT64_MAX;
+  std::array<TxnResult, HISTORY_SIZE> history = {};
   int history_head = 0;
 };
 
