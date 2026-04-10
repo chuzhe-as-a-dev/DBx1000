@@ -295,11 +295,15 @@ static inline bool add_dependency(TxnManState* tms, txn_man* writer,
                                   uint64_t txn_id, bool from_dirty_read) {
   for (int i = 0; i < tms->dep_count; i++) {
     if (tms->deps[i].writer == writer && tms->deps[i].txn_id == txn_id) {
-      if (from_dirty_read) tms->deps[i].from_dirty_read = true;
+      if (from_dirty_read) {
+        tms->deps[i].from_dirty_read = true;
+      }
       return true;
     }
   }
-  if (tms->dep_count >= MAX_DEPS) return false;
+  if (tms->dep_count >= MAX_DEPS) {
+    return false;
+  }
   tms->deps[tms->dep_count] = {writer, txn_id, from_dirty_read};
   tms->dep_count++;
   return true;
@@ -307,9 +311,8 @@ static inline bool add_dependency(TxnManState* tms, txn_man* writer,
 
 static inline TxnStatus check_dep_status(Dependency* dep) {
   TxnManState* ws = get_tms(dep->writer);
-  if (!ws) {
-    return TXN_UNKNOWN;
-  }
+  assert(ws);  // TxnManState is never freed; null means dep on a txn_man
+               // that never ran a transaction — should not happen.
   // Fast path: writer still on the same txn — read status directly.
   if (ws->txn_id == dep->txn_id) {
     return ws->status;
@@ -474,8 +477,9 @@ static RC piece_validate_and_expose(txn_man* txn, TxnManState* tms) {
     for (DirtyEntry* e = rs->dirty_head; e; e = e->next) {
       if (e->writer != txn &&
           !add_dependency(tms, e->writer, e->txn_id, false)) {
-        for (int j = pw; j < pw + locked; j++)
+        for (int j = pw; j < pw + locked; j++) {
           unlock((RowState*)tms->writes[j].orig_row->cc_row_state);
+        }
         return Abort;
       }
     }
