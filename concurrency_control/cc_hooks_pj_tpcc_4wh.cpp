@@ -190,8 +190,8 @@ enum TxnStatus {
 };
 struct Dependency {
   txn_man* writer;
-  uint64_t txn_id;          // writer's TxnManState::txn_id when dep was created
-  TpccTxnType dep_txn_type; // writer's txn type, captured at creation time
+  uint64_t txn_id;  // writer's TxnManState::txn_id when dep was created
+  TpccTxnType dep_txn_type;  // writer's txn type, captured at creation time
   bool from_dirty_read;
 };
 struct ReadEntry {
@@ -338,26 +338,15 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
   // pre-validation wait (consolidated with the pre-access wait).
   for (int d = 0; d < tms->dep_count; d++) {
     Dependency* dep = &tms->deps[d];
-    // Determine wait target based on dep's txn type. We need the dep's
-    // TxnManState to know its type. If the dep already finished, skip.
-    TxnStatus s = check_dep_status(dep);
-    if (s != TXN_RUNNING) {
-      if ((s == TXN_ABORTED || s == TXN_UNKNOWN) && dep->from_dirty_read) {
-        return Abort;
-      }
-      continue;
-    }
     // Policy wait targets are Polyjuice local step values (per-txn-type).
     // Use dep_txn_type captured at dependency creation to avoid racing with
     // the writer starting a new txn of a different type.
     int target = (dep->dep_txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
                                                       : policy->wait_payment;
-    if (!target) {
-      continue;
-    }
+    if (!target) continue;
     uint64_t t0 = get_sys_clock();
     while (true) {
-      s = check_dep_status(dep);
+      TxnStatus s = check_dep_status(dep);
       if (s != TXN_RUNNING) {
         if ((s == TXN_ABORTED || s == TXN_UNKNOWN) && dep->from_dirty_read) {
           return Abort;
@@ -726,7 +715,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
         TxnManState* writer_state = (TxnManState*)de->writer->cc_txn_state;
         if (writer_state && writer_state->status == TXN_RUNNING) {
           if (!add_dependency(tms, de->writer, de->txn_id,
-                             writer_state->txn_type, true)) {
+                              writer_state->txn_type, true)) {
             unlock(rs);
             return Abort;
           }
