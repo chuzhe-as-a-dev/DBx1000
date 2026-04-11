@@ -413,7 +413,9 @@ struct WriteLockSet {
 static bool validate_reads(TxnManState* tms, int r_begin, int r_end,
                            int w_begin, int w_end) {
   for (int i = r_begin; i < r_end; i++) {
-    if (tms->reads[i].dirty) continue;
+    if (tms->reads[i].dirty) {
+      continue;
+    }
     RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
     uint64_t v = rs->tid_word;
     if (v & LOCK_BIT) {
@@ -424,10 +426,14 @@ static bool validate_reads(TxnManState* tms, int r_begin, int r_end,
           break;
         }
       }
-      if (!own_write) return false;
+      if (!own_write) {
+        return false;
+      }
       v &= ~LOCK_BIT;
     }
-    if (tms->reads[i].tid != v) return false;
+    if (tms->reads[i].tid != v) {
+      return false;
+    }
   }
   return true;
 }
@@ -504,11 +510,15 @@ static RC final_commit(txn_man* txn) {
   // We skip condition (c) (epoch) as we don't implement Silo's epoch GC.
   uint64_t max_tid = tms->last_commit_tid;
   for (int i = 0; i < tms->read_count; i++) {
-    if (tms->reads[i].tid > max_tid) max_tid = tms->reads[i].tid;
+    if (tms->reads[i].tid > max_tid) {
+      max_tid = tms->reads[i].tid;
+    }
   }
   for (int i = 0; i < tms->write_count; i++) {
     uint64_t t = get_tid((RowState*)tms->writes[i].orig_row->cc_row_state);
-    if (t > max_tid) max_tid = t;
+    if (t > max_tid) {
+      max_tid = t;
+    }
   }
   uint64_t commit_tid = max_tid + 1;
   tms->last_commit_tid = commit_tid;
@@ -565,24 +575,58 @@ void cc_free_row_state(row_t* r) {
 }
 void cc_global_init() {}
 
-// ---- Adaptive backoff (per the Polyjuice paper §4.3) ----
-// On abort, increase backoff; on commit, decrease. Spin before retrying.
+// ---- Learned adaptive backoff (Polyjuice §4.3) ----
+// Per-thread backoff state, adjusted using learned multipliers from the policy.
+// On abort: backoff *= (1 + x * alpha), then spin for `backoff` nop_pauses.
+// On commit: backoff /= (1 + x * alpha), no spin.
+// x is a per-(success/failure, retry_count, txn_type) learned double.
 // ABORT_PENALTY should be 0 when using this variant.
-static constexpr uint64_t BACKOFF_MIN = 1000;     // ~1 us at 1 GHz
-static constexpr uint64_t BACKOFF_MAX = 100000;   // ~100 us
-static thread_local uint64_t pj_backoff[2] = {};  // [0]=new_order [1]=payment
+
+// Learned multipliers from 48th-4wh.txt policy file.
+// Dimensions: [2][3][2] = [success(1)/failure(0)][retry 0,1,>=2][NO,PAY]
+// Type 0 in Polyjuice is read-only (always nop); we only have NO and PAY.
+static constexpr double BACKOFF_MULT[2][3][2] = {
+    // [0] = failure (increase backoff)
+    {{8, 1}, {8, 1}, {0, 0}},
+    // [1] = success (decrease backoff)
+    {{1, 0}, {1, 4}, {4, 1}},
+};
+static constexpr double BACKOFF_ALPHA = 0.5;
+static constexpr uint64_t BACKOFF_FLOOR = 100;
+static constexpr uint64_t BACKOFF_CAP = 6710886400ULL;
+
+struct BackoffState {
+  uint64_t backoff = BACKOFF_FLOOR;
+  int retry_count = 0;
+};
+static thread_local BackoffState pj_backoff[2];  // [TXN_NEW_ORDER, TXN_PAYMENT]
+
+static inline void adjust_backoff(BackoffState& bs, TpccTxnType type,
+                                  bool success) {
+  int retry = bs.retry_count > 2 ? 2 : bs.retry_count;
+  double x = BACKOFF_MULT[success ? 1 : 0][retry][type];
+  double factor = 1.0 + x * BACKOFF_ALPHA;
+  if (success) {
+    bs.backoff = static_cast<uint64_t>(bs.backoff / factor);
+    if (bs.backoff < BACKOFF_FLOOR) bs.backoff = BACKOFF_FLOOR;
+    bs.retry_count = 0;
+  } else {
+    bs.backoff = static_cast<uint64_t>(bs.backoff * factor);
+    if (bs.backoff > BACKOFF_CAP) bs.backoff = BACKOFF_CAP;
+    bs.retry_count++;
+  }
+}
 
 void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   (void)th;
   tpcc_query* tq = (tpcc_query*)q;
   TpccTxnType txn_type =
       (tq->type == TPCC_NEW_ORDER) ? TXN_NEW_ORDER : TXN_PAYMENT;
-  // Adaptive backoff: spin before starting if previous attempt aborted.
-  if (pj_backoff[txn_type] > 0) {
-    uint64_t t0 = get_sys_clock();
-    while (get_sys_clock() - t0 < pj_backoff[txn_type]) {
-      PAUSE
-    }
+  // Backoff: spin for learned number of nop_pauses before retrying.
+  BackoffState& bs = pj_backoff[txn_type];
+  if (bs.retry_count > 0) {
+    uint64_t spins = bs.backoff;
+    while (spins--) PAUSE
   }
   // Reuse TxnManState across transactions; allocate on first use.
   TxnManState* tms = get_tms(tx);
@@ -612,14 +656,7 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   if (!tms) {
     return;
   }
-  // Adjust backoff: increase on abort, decrease on commit.
-  if (r == RCOK) {
-    pj_backoff[tms->txn_type] /= 2;
-  } else {
-    uint64_t b = pj_backoff[tms->txn_type];
-    pj_backoff[tms->txn_type] =
-        (b == 0) ? BACKOFF_MIN : (b * 2 < BACKOFF_MAX ? b * 2 : BACKOFF_MAX);
-  }
+  adjust_backoff(pj_backoff[tms->txn_type], tms->txn_type, r == RCOK);
   // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
   TxnStatus final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
   publish_txn_result(tms, final_status);
