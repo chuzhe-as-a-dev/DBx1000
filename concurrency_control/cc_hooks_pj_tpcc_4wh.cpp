@@ -662,10 +662,8 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
 
 void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   (void)th;
-  TxnManState* tms = (TxnManState*)tx->cc_txn_state;
-  if (!tms) {
-    return;
-  }
+  TxnManState* tms = get_tms(tx);
+  assert(tms);
   adjust_backoff(pj_backoff[tms->txn_type], tms->txn_type, r == RCOK);
   // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
   TxnStatus final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
