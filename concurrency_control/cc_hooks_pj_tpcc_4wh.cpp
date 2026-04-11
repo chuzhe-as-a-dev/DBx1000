@@ -736,64 +736,54 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
 
-  if (type == RD || type == SCAN) {
-    if (tms->read_count >= MAX_ACCESSES) {
-      return Abort;
-    }
-    if (policy->read_version == 1) {
-      // DIRTY_READ: check dirty_head for other txns' uncommitted data.
-      spin_lock(rs);
-      DirtyEntry* de = rs->dirty_head;
-      if (de) {
-        if (!add_dependency(tms, de->writer, de->txn_seq,
-                            get_tms(de->writer)->txn_type, true)) {
-          unlock(rs);
-          return Abort;
-        }
-        // Copy dirty data into a local row for the txn to use.
-        row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
-        copy->init(orig->get_table(), orig->get_part_id());
-        memcpy(copy->get_data(), de->data, orig->get_tuple_size());
-        unlock(rs);
-        *local_row_out = copy;
-        tms->reads[tms->read_count] = {orig, UINT64_MAX, /*dirty=*/true};
-        tms->read_count++;
-      } else {
-        unlock(rs);
-        // No dirty data — OCC snapshot of orig_row.
-        row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
-        copy->init(orig->get_table(), orig->get_part_id());
-        uint64_t tid = occ_snapshot(orig, copy);
-        *local_row_out = copy;
-        tms->reads[tms->read_count] = {orig, tid, false};
-        tms->read_count++;
-      }
-    } else {
-      // CLEAN_READ: OCC snapshot of orig_row.
-      row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
-      copy->init(orig->get_table(), orig->get_part_id());
-      uint64_t tid = occ_snapshot(orig, copy);
-      *local_row_out = copy;
-      tms->reads[tms->read_count] = {orig, tid, false};
-      tms->read_count++;
-    }
+  // Capacity check before allocating anything.
+  if (tms->read_count >= MAX_ACCESSES) {
+    return Abort;
+  }
+  if (type == WR && tms->write_count >= MAX_ACCESSES) {
+    return Abort;
   }
 
-  if (type == WR) {
-    if (tms->write_count >= MAX_ACCESSES || tms->read_count >= MAX_ACCESSES) {
-      return Abort;
+  // All paths (RD, WR, dirty, clean) allocate a local copy.
+  row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
+  copy->init(orig->get_table(), orig->get_part_id());
+
+  // Try dirty read if policy says so (RD/SCAN only).
+  bool dirty = false;
+  if ((type == RD || type == SCAN) && policy->read_version == 1) {
+    spin_lock(rs);
+    DirtyEntry* de = rs->dirty_head;
+    if (de) {
+      if (!add_dependency(tms, de->writer, de->txn_seq,
+                          get_tms(de->writer)->txn_type, true)) {
+        unlock(rs);
+        copy->free_row();
+        _mm_free(copy);
+        return Abort;
+      }
+      memcpy(copy->get_data(), de->data, orig->get_tuple_size());
+      dirty = true;
     }
-    // Writes go to a local copy via OCC snapshot; orig_row untouched until commit.
-    row_t* local_copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
-    local_copy->init(orig->get_table(), orig->get_part_id());
-    uint64_t tid = occ_snapshot(orig, local_copy);
-    *local_row_out = local_copy;
+    unlock(rs);
+  }
+
+  // If not dirty, OCC snapshot from committed data.
+  uint64_t tid = 0;
+  if (!dirty) {
+    tid = occ_snapshot(orig, copy);
+  }
+
+  *local_row_out = copy;
+
+  // Record read entry (all ops implicitly read).
+  tms->reads[tms->read_count] = {orig, dirty ? UINT64_MAX : tid, dirty};
+  tms->read_count++;
+
+  // WR: also record write entry.
+  if (type == WR) {
     bool to_expose = (policy->write_visibility == 1);
-    tms->writes[tms->write_count] = {orig, local_copy, to_expose, false};
+    tms->writes[tms->write_count] = {orig, copy, to_expose, false};
     tms->write_count++;
-    // Writes implicitly read — record for validation.
-    tms->reads[tms->read_count] = {orig, tid, false};
-    tms->read_count++;
   }
 
   if (step > tms->step) {
