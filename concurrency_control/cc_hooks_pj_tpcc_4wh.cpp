@@ -705,58 +705,67 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   return RCOK;
 }
 
-void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
-                int op) {
+// NOTE: read-your-own-writes via dirty_head is NOT supported. If a txn
+// writes a row and later reads it, it must keep the value in a local
+// variable — do not re-read from the database. (tpcc_txn_pj.cpp does
+// not do this, so it's safe for our current workloads.)
+RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
+              int op) {
   TxnManState* tms = (TxnManState*)txn->cc_txn_state;
   RowState* rs = (RowState*)orig->cc_row_state;
   int step;
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
-  // NOTE: read-your-own-writes via dirty_head is NOT supported. If a txn
-  // writes a row and later reads it, it must keep the value in a local
-  // variable — do not re-read from the database. (tpcc_txn_pj.cpp does
-  // not do this, so it's safe for our current workloads.)
+
   if (type == RD || type == SCAN) {
     if (tms->read_count >= MAX_ACCESSES) {
-      tms->status = TXN_ABORTED;
-      return;
+      return Abort;
     }
     if (policy->read_version == 1) {
-      // DIRTY_READ path: check dirty_head for other txns' uncommitted data.
+      // DIRTY_READ: check dirty_head for other txns' uncommitted data.
       spin_lock(rs);
       DirtyEntry* de = rs->dirty_head;
       if (de) {
         if (!add_dependency(tms, de->writer, de->txn_seq,
                             get_tms(de->writer)->txn_type, true)) {
-          tms->status = TXN_ABORTED;
+          unlock(rs);
+          return Abort;
         }
-        uint32_t sz = orig->get_tuple_size();
+        // Copy dirty data into a local row for the txn to use.
         row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
         copy->init(orig->get_table(), orig->get_part_id());
-        memcpy(copy->get_data(), de->data, sz);
+        memcpy(copy->get_data(), de->data, orig->get_tuple_size());
         unlock(rs);
         *local_row_out = copy;
         tms->reads[tms->read_count] = {orig, UINT64_MAX, /*dirty=*/true};
         tms->read_count++;
       } else {
+        // No dirty data — snapshot orig_row for isolation.
         uint64_t tid = get_tid(rs);
         unlock(rs);
+        row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
+        copy->init(orig->get_table(), orig->get_part_id());
+        copy->copy(orig);
+        *local_row_out = copy;
         tms->reads[tms->read_count] = {orig, tid, false};
         tms->read_count++;
       }
     } else {
-      // CLEAN_READ: record tid for commit-time validation.
+      // CLEAN_READ: snapshot orig_row for isolation, record tid.
+      row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
+      copy->init(orig->get_table(), orig->get_part_id());
+      copy->copy(orig);
+      *local_row_out = copy;
       tms->reads[tms->read_count] = {orig, get_tid(rs), false};
       tms->read_count++;
     }
   }
+
   if (type == WR) {
-    if (tms->write_count >= MAX_ACCESSES ||
-        tms->read_count >= MAX_ACCESSES) {
-      tms->status = TXN_ABORTED;
-      return;
+    if (tms->write_count >= MAX_ACCESSES || tms->read_count >= MAX_ACCESSES) {
+      return Abort;
     }
-    // Writes always go to a local copy; orig_row is untouched until commit.
+    // Writes go to a local copy; orig_row is untouched until commit.
     row_t* local_copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
     local_copy->init(orig->get_table(), orig->get_part_id());
     local_copy->copy(orig);
@@ -764,16 +773,18 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
     bool to_expose = (policy->write_visibility == 1);
     tms->writes[tms->write_count] = {orig, local_copy, to_expose, false};
     tms->write_count++;
-    // Also record a read entry for validation (writes implicitly read).
+    // Writes implicitly read — record for validation.
     tms->reads[tms->read_count] = {orig, get_tid(rs), false};
     tms->read_count++;
   }
+
   if (step > tms->step) {
     tms->step = step;
   }
   if (policy->early_validation) {
     tms->pending_piece_validation = true;
   }
+  return RCOK;
 }
 
 RC cc_pre_commit(txn_man* txn) {

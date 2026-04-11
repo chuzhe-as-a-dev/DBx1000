@@ -218,7 +218,10 @@ row_t* txn_man::get_row(row_t* row, access_t type, int op_idx) {
   }
 
   if constexpr (cc_alg == CCAlg::PerOp) {
-    cc_post_op(this, row, &accesses[row_cnt]->data, type, op_idx);
+    rc = cc_post_op(this, row, &accesses[row_cnt]->data, type, op_idx);
+    if (rc == Abort) {
+      return NULL;
+    }
   }
 
   row_cnt++;

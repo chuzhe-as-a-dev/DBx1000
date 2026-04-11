@@ -173,7 +173,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {
   return rc;
 }
 
-void cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
+RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
                 access_t type, int op_idx) {
   (void)op_idx;
   MvccTxnState* ts = (MvccTxnState*)txn->cc_txn_state;
@@ -186,7 +186,7 @@ void cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
     pthread_mutex_unlock(&s->latch);
     *local_inout = write_buf;
     txn->accesses[txn->row_cnt]->data = write_buf;
-    return;
+    return RCOK;
   }
 
   // type == RD / SCAN: find version with largest wts < ts->ts.
@@ -217,6 +217,7 @@ void cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
   copy_row->copy(chosen);
   *local_inout = copy_row;
   txn->accesses[txn->row_cnt]->data = copy_row;
+  return RCOK;
 }
 
 // ---- Commit validation ---------------------------------------------------
