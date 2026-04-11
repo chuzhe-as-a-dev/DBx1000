@@ -232,7 +232,6 @@ struct TxnManState {
   TpccTxnType txn_type;
   int ol_cnt;         // order-line count (new_order only)
   volatile int step;  // current progress for wait tracking
-  volatile TxnStatus status;
   Dependency deps[MAX_DEPS];
   int dep_count;
   ReadEntry reads[MAX_ACCESSES];
@@ -568,7 +567,6 @@ static RC final_commit(txn_man* txn) {
     }
   }
   wlocks.unlock_all(tms);
-  tms->status = TXN_COMMITTED;
   tms->step = (tms->txn_type == TXN_NEW_ORDER) ? 11 : 7;
   return RCOK;
 }
@@ -669,7 +667,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   tms->txn_type = txn_type;
   tms->ol_cnt = (txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
   tms->step = 0;
-  tms->status = TXN_RUNNING;
+
 
   tms->dep_count = 0;
   tms->read_count = 0;
@@ -699,9 +697,6 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   (void)orig;
   (void)type;
   TxnManState* tms = (TxnManState*)txn->cc_txn_state;
-  if (tms->status == TXN_ABORTED) {
-    return Abort;
-  }
   int step;
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
@@ -717,7 +712,6 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   if (tms->pending_piece_validation) {
     tms->pending_piece_validation = false;
     if (piece_validate_and_expose(txn) != RCOK) {
-      tms->status = TXN_ABORTED;
       return Abort;
     }
   }
@@ -796,10 +790,7 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
 }
 
 RC cc_pre_commit(txn_man* txn) {
-  TxnManState* tms = (TxnManState*)txn->cc_txn_state;
-  if (tms->status == TXN_ABORTED) {
-    return Abort;
-  }
+  TxnManState* tms = get_tms(txn);
   // Flush any pending piece validation
   if (tms->pending_piece_validation) {
     tms->pending_piece_validation = false;
@@ -831,7 +822,6 @@ RC cc_pre_commit(txn_man* txn) {
 void cc_release_op(txn_man* txn, row_t* orig, row_t* local, access_t type,
                    int op) {
   (void)op;
-  TxnManState* tms = (TxnManState*)txn->cc_txn_state;
   if (type == XP) {
     // Abort path: remove our entry from dirty list
     RowState* rs = (RowState*)orig->cc_row_state;
@@ -848,7 +838,6 @@ void cc_release_op(txn_man* txn, row_t* orig, row_t* local, access_t type,
       pp = &(*pp)->next;
     }
     unlock(rs);
-    tms->status = TXN_ABORTED;
   }
   if ((type == RD || type == SCAN) && local && local != orig) {
     local->free_row();
