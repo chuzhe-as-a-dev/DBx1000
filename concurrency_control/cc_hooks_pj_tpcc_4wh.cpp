@@ -404,6 +404,31 @@ struct WriteLockSet {
   }
 };
 
+// Validate reads[r_begin..r_end) against current tid_word. Rows locked
+// by writes[w_begin..w_end) are recognized as our own (LOCK_BIT OK).
+// Returns true if all reads are still valid.
+static bool validate_reads(TxnManState* tms, int r_begin, int r_end,
+                           int w_begin, int w_end) {
+  for (int i = r_begin; i < r_end; i++) {
+    if (tms->reads[i].dirty) continue;
+    RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
+    uint64_t v = rs->tid_word;
+    if (v & LOCK_BIT) {
+      bool own_write = false;
+      for (int j = w_begin; j < w_end; j++) {
+        if (tms->writes[j].orig_row == tms->reads[i].row) {
+          own_write = true;
+          break;
+        }
+      }
+      if (!own_write) return false;
+      v &= ~LOCK_BIT;
+    }
+    if (tms->reads[i].tid != v) return false;
+  }
+  return true;
+}
+
 // ---- Piece validate+expose (NOT install to orig_row) ----
 // Validates reads/writes in the current piece and, for PUBLIC writes,
 // exposes dirty data so other txns can dirty-read it.
@@ -421,36 +446,9 @@ static RC piece_validate_and_expose(txn_man* txn) {
     return Abort;
   }
 
-  // Validate reads in this piece (Silo-style tid_word comparison).
-  // - Clean reads: abort if tid_word changed (another txn wrote this row).
-  // - Dirty reads: skip — validated via dependency tracking instead.
-  // - Self-writes: we hold the lock, so tid_word has LOCK_BIT set. The
-  //   own_write check recognizes this as our own lock, not a conflict.
-  for (int i = pr; i < pre; i++) {
-    if (tms->reads[i].dirty) {
-      continue;
-    }
-    RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
-    uint64_t v = rs->tid_word;
-    if (v & LOCK_BIT) {
-      // Locked by someone — OK if we also write this row (we hold the lock)
-      bool own_write = false;
-      for (int j = pw; j < pwe; j++) {
-        if (tms->writes[j].orig_row == tms->reads[i].row) {
-          own_write = true;
-          break;
-        }
-      }
-      if (!own_write) {
-        wlocks.unlock_all(tms);
-        return Abort;
-      }
-      v &= ~LOCK_BIT;  // ignore lock bit for later version comparison
-    }
-    if (tms->reads[i].tid != v) {
-      wlocks.unlock_all(tms);
-      return Abort;
-    }
+  if (!validate_reads(tms, pr, pre, pw, pwe)) {
+    wlocks.unlock_all(tms);
+    return Abort;
   }
   // Expose PUBLIC writes to dirty list; PRIVATE writes stay local.
   // Record write-write deps on prior uncommitted writers regardless.
@@ -494,32 +492,9 @@ static RC final_commit(txn_man* txn) {
   if (!wlocks.lock_sorted(tms, 0, tms->write_count)) {
     return Abort;
   }
-  // Validate all reads (same tid_word approach as piece validation; see
-  // comment in piece_validate_and_expose for correctness reasoning).
-  for (int i = 0; i < tms->read_count; i++) {
-    if (tms->reads[i].dirty) {
-      continue;
-    }
-    RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
-    uint64_t v = rs->tid_word;
-    if (v & LOCK_BIT) {
-      bool own_write = false;
-      for (int j = 0; j < tms->write_count; j++) {
-        if (tms->writes[j].orig_row == tms->reads[i].row) {
-          own_write = true;
-          break;
-        }
-      }
-      if (!own_write) {
-        wlocks.unlock_all(tms);
-        return Abort;
-      }
-      v &= ~LOCK_BIT;  // ignore lock bit for later version comparison
-    }
-    if (tms->reads[i].tid != v) {
-      wlocks.unlock_all(tms);
-      return Abort;
-    }
+  if (!validate_reads(tms, 0, tms->read_count, 0, tms->write_count)) {
+    wlocks.unlock_all(tms);
+    return Abort;
   }
   // Compute commit TID (must be greater than all observed tids).
   uint64_t max_tid = 0;
