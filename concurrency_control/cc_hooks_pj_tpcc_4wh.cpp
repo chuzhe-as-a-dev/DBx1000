@@ -583,23 +583,22 @@ void cc_init_txn_man(txn_man* tx) {
 
 // ---- Learned adaptive backoff (Polyjuice §4.3) ----
 // Per-thread backoff state, adjusted using learned multipliers from the policy.
-// On abort: backoff *= (1 + x * alpha), then spin for `backoff` nop_pauses.
-// On commit: backoff /= (1 + x * alpha), no spin.
-// x is a per-(success/failure, retry_count, txn_type) learned double.
-// ABORT_PENALTY should be 0 when using this variant.
+// On abort: backoff *= (1 + mult * ALPHA), then spin for `backoff` nop_pauses.
+// On commit: backoff /= (1 + mult * ALPHA), no spin.
+// `mult` is a per-(success/failure, retry_count, txn_type) learned value.
+// ALPHA is a global scaling constant (from Polyjuice bench.cc:51).
 
 // Learned multipliers from 48th-4wh.txt policy file.
 // Dimensions: [2][3][2] = [success(1)/failure(0)][retry 0,1,>=2][NO,PAY]
-// Type 0 in Polyjuice is read-only (always nop); we only have NO and PAY.
 static constexpr double BACKOFF_MULT[2][3][2] = {
     // [0] = failure (increase backoff)
     {{8, 1}, {8, 1}, {0, 0}},
     // [1] = success (decrease backoff)
     {{1, 0}, {1, 4}, {4, 1}},
 };
-static constexpr double BACKOFF_ALPHA = 0.5;
-static constexpr uint64_t BACKOFF_FLOOR = 100;
-static constexpr uint64_t BACKOFF_CAP = 6710886400ULL;
+static constexpr double BACKOFF_ALPHA = 0.5;              // bench.cc:51
+static constexpr uint64_t BACKOFF_FLOOR = 100;            // bench.h:253
+static constexpr uint64_t BACKOFF_CAP = 6710886400ULL;    // bench.h:248
 
 struct BackoffState {
   uint64_t backoff = BACKOFF_FLOOR;
@@ -610,15 +609,19 @@ static thread_local BackoffState pj_backoff[2];  // [TXN_NEW_ORDER, TXN_PAYMENT]
 static inline void adjust_backoff(BackoffState& bs, TpccTxnType type,
                                   bool success) {
   int retry = bs.retry_count > 2 ? 2 : bs.retry_count;
-  double x = BACKOFF_MULT[success ? 1 : 0][retry][type];
-  double factor = 1.0 + x * BACKOFF_ALPHA;
+  double mult = BACKOFF_MULT[success ? 1 : 0][retry][type];
+  double factor = 1.0 + mult * BACKOFF_ALPHA;
   if (success) {
     bs.backoff = static_cast<uint64_t>(bs.backoff / factor);
-    if (bs.backoff < BACKOFF_FLOOR) bs.backoff = BACKOFF_FLOOR;
+    if (bs.backoff < BACKOFF_FLOOR) {
+      bs.backoff = BACKOFF_FLOOR;
+    }
     bs.retry_count = 0;
   } else {
     bs.backoff = static_cast<uint64_t>(bs.backoff * factor);
-    if (bs.backoff > BACKOFF_CAP) bs.backoff = BACKOFF_CAP;
+    if (bs.backoff > BACKOFF_CAP) {
+      bs.backoff = BACKOFF_CAP;
+    }
     bs.retry_count++;
   }
 }
@@ -632,7 +635,9 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   BackoffState& bs = pj_backoff[txn_type];
   if (bs.retry_count > 0) {
     uint64_t spins = bs.backoff;
-    while (spins--) PAUSE
+    while (spins--) {
+      PAUSE
+    }
   }
   // TxnManState allocated in cc_init_txn_man, reused across transactions.
   TxnManState* tms = get_tms(tx);
