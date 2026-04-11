@@ -724,17 +724,14 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
           tms->reads[tms->read_count] = {orig, tid, de->writer != txn};
           tms->read_count++;
         }
-        if (step > tms->step) {
-          tms->step = step;
+      } else {
+        // No dirty data — fall back to clean read.
+        uint64_t tid = get_tid(rs);
+        unlock(rs);
+        if (tms->read_count < MAX_ACCESSES) {
+          tms->reads[tms->read_count] = {orig, tid, false};
+          tms->read_count++;
         }
-        return RCOK;
-      }
-      // No dirty data — fall back to clean read.
-      uint64_t tid = get_tid(rs);
-      unlock(rs);
-      if (tms->read_count < MAX_ACCESSES) {
-        tms->reads[tms->read_count] = {orig, tid, false};
-        tms->read_count++;
       }
     } else {
       // CLEAN_READ: read latest committed version (Silo-style)
