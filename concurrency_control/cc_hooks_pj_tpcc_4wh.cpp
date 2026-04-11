@@ -225,6 +225,9 @@ struct TxnManState {
   bool pending_piece_validation;  // early-validation pending before next op
 
   // -- Persistent fields (survive across transactions) --
+  // Per Silo §4.4, a worker's TID must be larger than its most recently
+  // chosen TID (condition b), ensuring same-worker txns are ordered.
+  uint64_t last_commit_tid = 0;
   // Monotonically increasing id, incremented each cc_pre_txn. Starts at 0
   // and is bumped to 1 before the first transaction, so valid txn_ids are
   // always >= 1. This makes 0 a safe sentinel for uninitialized ring buffer
@@ -496,20 +499,19 @@ static RC final_commit(txn_man* txn) {
     wlocks.unlock_all(tms);
     return Abort;
   }
-  // Compute commit TID (must be greater than all observed tids).
-  uint64_t max_tid = 0;
+  // Compute commit TID per Silo §4.4: must be greater than (a) all
+  // read/written row tids and (b) this worker's last chosen TID.
+  // We skip condition (c) (epoch) as we don't implement Silo's epoch GC.
+  uint64_t max_tid = tms->last_commit_tid;
   for (int i = 0; i < tms->read_count; i++) {
-    if (tms->reads[i].tid > max_tid) {
-      max_tid = tms->reads[i].tid;
-    }
+    if (tms->reads[i].tid > max_tid) max_tid = tms->reads[i].tid;
   }
   for (int i = 0; i < tms->write_count; i++) {
     uint64_t t = get_tid((RowState*)tms->writes[i].orig_row->cc_row_state);
-    if (t > max_tid) {
-      max_tid = t;
-    }
+    if (t > max_tid) max_tid = t;
   }
   uint64_t commit_tid = max_tid + 1;
+  tms->last_commit_tid = commit_tid;
   // Install: local_copy → orig_row, remove our entry from dirty list
   for (int i = 0; i < tms->write_count; i++) {
     WriteEntry& w = tms->writes[i];
