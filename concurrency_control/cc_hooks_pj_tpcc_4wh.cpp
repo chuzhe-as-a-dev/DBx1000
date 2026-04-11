@@ -718,10 +718,10 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
         }
         // Own or other's dirty entry — read it. For own entry, this is
         // read-your-own-writes via dirty_head (no dependency added).
-        uint64_t tid = get_tid(rs);
         unlock(rs);
         if (tms->read_count < MAX_ACCESSES) {
-          tms->reads[tms->read_count] = {orig, tid, de->writer != txn};
+          // tid unused for dirty reads (validated via deps), use sentinel.
+          tms->reads[tms->read_count] = {orig, UINT64_MAX, de->writer != txn};
           tms->read_count++;
         }
       } else {
