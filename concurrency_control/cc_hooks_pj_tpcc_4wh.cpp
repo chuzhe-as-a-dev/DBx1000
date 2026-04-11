@@ -144,7 +144,7 @@ static inline const PolicyEntry* lookup_policy(TpccTxnType txn_type,
 // ordering without cascading aborts.
 struct DirtyEntry {
   txn_man* writer;
-  uint64_t txn_id;
+  uint64_t txn_seq;  // writer's TxnManState::txn_seq when entry was created
   char* data;
   DirtyEntry* next;
 };
@@ -177,7 +177,7 @@ static inline void unlock(RowState* s) { s->tid_word &= ~LOCK_BIT; }
 // ---- Per-txn state ----
 // TxnManState is allocated once per txn_man (on first use) and reused across
 // transactions. Per-txn fields are reset in cc_pre_txn; persistent fields
-// (txn_id, history ring buffer) survive across transactions for dependency
+// (txn_seq, history ring buffer) survive across transactions for dependency
 // resolution.
 enum TxnStatus {
   TXN_RUNNING = 0,
@@ -191,7 +191,7 @@ enum TxnStatus {
 };
 struct Dependency {
   txn_man* writer;
-  uint64_t txn_id;  // writer's TxnManState::txn_id when dep was created
+  uint64_t txn_seq;  // writer's TxnManState::txn_seq when dep was created
   TpccTxnType dep_txn_type;  // writer's txn type, captured at creation time
   bool from_dirty_read;
 };
@@ -228,17 +228,20 @@ struct TxnManState {
   // Per Silo §4.2, a worker's TID must be larger than its most recently
   // chosen TID (condition b), ensuring same-worker txns are ordered.
   uint64_t last_commit_tid = 0;
-  // Monotonically increasing id, incremented each cc_pre_txn. Starts at 0
-  // and is bumped to 1 before the first transaction, so valid txn_ids are
-  // always >= 1. This makes 0 a safe sentinel for uninitialized ring buffer
-  // slots (see TxnResult below).
-  volatile uint64_t txn_id = 0;
+  // Per-txn_man sequence number, incremented each cc_pre_txn. NOT a commit
+  // timestamp (that's computed in final_commit as a Silo-style TID). This is
+  // purely a generation counter for dependency tracking: when a waiter holds
+  // a Dependency with txn_seq=N, it compares against the writer's current
+  // txn_seq to detect whether the writer has moved on to a new transaction.
+  // Starts at 0, bumped to 1 before the first txn, so valid values are >= 1.
+  // This makes 0 a safe sentinel for uninitialized ring buffer slots.
+  volatile uint64_t txn_seq = 0;
   // Ring buffer of recent completed txn outcomes (seqlock protocol).
-  // Slot validity: txn_id == 0 means uninitialized (never written),
-  // txn_id == HISTORY_UPDATING means write in progress, otherwise valid.
-  // Readers skip slots where txn_id doesn't match the target.
+  // Slot validity: txn_seq == 0 means uninitialized (never written),
+  // txn_seq == HISTORY_UPDATING means write in progress, otherwise valid.
+  // Readers skip slots where txn_seq doesn't match the target.
   struct TxnResult {
-    volatile uint64_t txn_id;  // 0=uninitialized, UPDATING=write in progress
+    volatile uint64_t txn_seq;  // 0=uninitialized, UPDATING=write in progress
     volatile TxnStatus status;
   };
   static constexpr int HISTORY_SIZE = 8;
@@ -257,33 +260,33 @@ static inline TxnManState* get_tms(txn_man* tx) {
 // Publish a completed txn's outcome to the ring buffer (seqlock protocol).
 static inline void publish_txn_result(TxnManState* tms, TxnStatus status) {
   int slot = tms->history_head;
-  tms->history[slot].txn_id = TxnManState::HISTORY_UPDATING;
+  tms->history[slot].txn_seq = TxnManState::HISTORY_UPDATING;
   COMPILER_BARRIER
   tms->history[slot].status = status;
   COMPILER_BARRIER
-  tms->history[slot].txn_id = tms->txn_id;
+  tms->history[slot].txn_seq = tms->txn_seq;
   tms->history_head = (slot + 1) % TxnManState::HISTORY_SIZE;
 }
 
 // Look up a txn's outcome in the writer's ring buffer.
-static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_id,
+static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_seq,
                                      TxnStatus* status) {
   for (int i = 0; i < TxnManState::HISTORY_SIZE; i++) {
     uint64_t id1;
 
     // If write in progress, spin until it completes, then check.
-    while ((id1 = writer_tms->history[i].txn_id) ==
+    while ((id1 = writer_tms->history[i].txn_seq) ==
            TxnManState::HISTORY_UPDATING) {
       PAUSE
     }
-    if (id1 == 0 || id1 != txn_id) {  // 0 = unused
+    if (id1 == 0 || id1 != txn_seq) {  // 0 = unused
       continue;
     }
 
     COMPILER_BARRIER
     TxnStatus s = writer_tms->history[i].status;
     COMPILER_BARRIER
-    uint64_t id2 = writer_tms->history[i].txn_id;
+    uint64_t id2 = writer_tms->history[i].txn_seq;
     if (id1 == id2) {
       *status = s;
       return true;
@@ -292,14 +295,14 @@ static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_id,
   return false;
 }
 
-// Add a dependency, deduplicating by (writer, txn_id). If an existing dep
+// Add a dependency, deduplicating by (writer, txn_seq). If an existing dep
 // with from_dirty_read=false is found and the new one is true, upgrade it.
 // Returns false if the dep array is full (caller should abort).
 static inline bool add_dependency(TxnManState* tms, txn_man* writer,
-                                  uint64_t txn_id, TpccTxnType dep_txn_type,
+                                  uint64_t txn_seq, TpccTxnType dep_txn_type,
                                   bool from_dirty_read) {
   for (int i = 0; i < tms->dep_count; i++) {
-    if (tms->deps[i].writer == writer && tms->deps[i].txn_id == txn_id) {
+    if (tms->deps[i].writer == writer && tms->deps[i].txn_seq == txn_seq) {
       if (from_dirty_read) {
         tms->deps[i].from_dirty_read = true;
       }
@@ -309,7 +312,7 @@ static inline bool add_dependency(TxnManState* tms, txn_man* writer,
   if (tms->dep_count >= MAX_DEPS) {
     return false;
   }
-  tms->deps[tms->dep_count] = {writer, txn_id, dep_txn_type, from_dirty_read};
+  tms->deps[tms->dep_count] = {writer, txn_seq, dep_txn_type, from_dirty_read};
   tms->dep_count++;
   return true;
 }
@@ -319,13 +322,13 @@ static inline TxnStatus check_dep_status(Dependency* dep) {
   assert(ws);  // TxnManState is never freed; null means dep on a txn_man
   // that never ran a transaction — should not happen.
 
-  if (ws->txn_id == dep->txn_id) {
+  if (ws->txn_seq == dep->txn_seq) {
     return TXN_RUNNING;
   }
 
   // Ring buffer is the authoritative source for completed txn outcomes.
   TxnStatus status;
-  if (lookup_txn_result(ws, dep->txn_id, &status)) {
+  if (lookup_txn_result(ws, dep->txn_seq, &status)) {
     return status;
   }
 
@@ -467,7 +470,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
     // Add write-write dependencies on prior uncommitted writers
     for (DirtyEntry* e = rs->dirty_head; e; e = e->next) {
       if (e->writer != txn &&
-          !add_dependency(tms, e->writer, e->txn_id,
+          !add_dependency(tms, e->writer, e->txn_seq,
                           get_tms(e->writer)->txn_type, false)) {
         wlocks.unlock_all(tms);
         return Abort;
@@ -479,7 +482,7 @@ static RC piece_validate_and_expose(txn_man* txn) {
       uint32_t sz = w.local_copy->get_tuple_size();
       DirtyEntry* entry = (DirtyEntry*)malloc(sizeof(DirtyEntry));
       entry->writer = txn;
-      entry->txn_id = tms->txn_id;
+      entry->txn_seq = tms->txn_seq;
       entry->data = (char*)malloc(sz);
       memcpy(entry->data, w.local_copy->get_data(), sz);
       entry->next = rs->dirty_head;
@@ -596,9 +599,9 @@ static constexpr double BACKOFF_MULT[2][3][2] = {
     // [1] = success (decrease backoff)
     {{1, 0}, {1, 4}, {4, 1}},
 };
-static constexpr double BACKOFF_ALPHA = 0.5;              // bench.cc:51
-static constexpr uint64_t BACKOFF_FLOOR = 100;            // bench.h:253
-static constexpr uint64_t BACKOFF_CAP = 6710886400ULL;    // bench.h:248
+static constexpr double BACKOFF_ALPHA = 0.5;            // bench.cc:51
+static constexpr uint64_t BACKOFF_FLOOR = 100;          // bench.h:253
+static constexpr uint64_t BACKOFF_CAP = 6710886400ULL;  // bench.h:248
 
 struct BackoffState {
   uint64_t backoff = BACKOFF_FLOOR;
@@ -642,8 +645,8 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   // TxnManState allocated in cc_init_txn_man, reused across transactions.
   TxnManState* tms = get_tms(tx);
   assert(tms);
-  // Increment persistent txn_id; reset per-txn fields.
-  tms->txn_id = tms->txn_id + 1;
+  // Increment persistent txn_seq; reset per-txn fields.
+  tms->txn_seq = tms->txn_seq + 1;
   tms->txn_type = txn_type;
   tms->ol_cnt = (txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
   tms->step = 0;
@@ -707,7 +710,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       if (de) {
         TxnManState* writer_state = (TxnManState*)de->writer->cc_txn_state;
         if (writer_state && writer_state->status == TXN_RUNNING) {
-          if (!add_dependency(tms, de->writer, de->txn_id,
+          if (!add_dependency(tms, de->writer, de->txn_seq,
                               writer_state->txn_type, true)) {
             unlock(rs);
             return Abort;
