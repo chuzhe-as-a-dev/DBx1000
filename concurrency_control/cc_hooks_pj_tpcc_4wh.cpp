@@ -734,19 +734,12 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
         }
       }
     } else {
-      // CLEAN_READ: read latest committed version (Silo-style)
-      uint64_t v, v2 = ~0ULL;
-      do {
-        v = rs->tid_word;
-        while (v & LOCK_BIT) {
-          PAUSE;
-          v = rs->tid_word;
-        }
-        COMPILER_BARRIER
-        v2 = rs->tid_word;
-      } while (v != v2);
+      // CLEAN_READ: record current tid for validation at commit time.
+      // No double-read protocol needed here — the actual data read happens
+      // after cc_pre_op returns (in txn code), so we can't bracket it.
+      // Commit-time validate_reads catches any concurrent modifications.
       if (tms->read_count < MAX_ACCESSES) {
-        tms->reads[tms->read_count] = {orig, v & ~LOCK_BIT, false};
+        tms->reads[tms->read_count] = {orig, get_tid(rs), false};
         tms->read_count++;
       }
     }
