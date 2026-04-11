@@ -679,22 +679,26 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
 RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   TxnManState* tms = (TxnManState*)txn->cc_txn_state;
   RowState* rs = (RowState*)orig->cc_row_state;
-  // If previous access had early_validation, do piece validation now
-  if (tms->pending_piece_validation) {
-    tms->pending_piece_validation = false;
-    if (piece_validate_and_expose(txn) != RCOK) {
-      tms->status = TXN_ABORTED;
-      return Abort;
-    }
-  }
   if (tms->status == TXN_ABORTED) {
     return Abort;
   }
   int step;
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
+  // Per the paper (§4.2): "we consolidate the two kinds of wait actions
+  // into one. Polyjuice uses the wait action corresponding to the next
+  // access-id if early-validation is enabled for the current access-id."
+  // So we wait first (using this access's wait values, which also serve
+  // as the pre-validation wait), then validate the previous piece.
   if (do_wait(tms, policy) != RCOK) {
     return Abort;
+  }
+  if (tms->pending_piece_validation) {
+    tms->pending_piece_validation = false;
+    if (piece_validate_and_expose(txn) != RCOK) {
+      tms->status = TXN_ABORTED;
+      return Abort;
+    }
   }
   if (type == RD || type == SCAN) {
     if (policy->read_version == 1) {
