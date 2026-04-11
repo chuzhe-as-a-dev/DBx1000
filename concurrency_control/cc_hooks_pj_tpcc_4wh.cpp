@@ -225,7 +225,7 @@ struct TxnManState {
   bool pending_piece_validation;  // early-validation pending before next op
 
   // -- Persistent fields (survive across transactions) --
-  // Per Silo §4.4, a worker's TID must be larger than its most recently
+  // Per Silo §4.2, a worker's TID must be larger than its most recently
   // chosen TID (condition b), ensuring same-worker txns are ordered.
   uint64_t last_commit_tid = 0;
   // Monotonically increasing id, incremented each cc_pre_txn. Starts at 0
@@ -499,7 +499,7 @@ static RC final_commit(txn_man* txn) {
     wlocks.unlock_all(tms);
     return Abort;
   }
-  // Compute commit TID per Silo §4.4: must be greater than (a) all
+  // Compute commit TID per Silo §4.2: must be greater than (a) all
   // read/written row tids and (b) this worker's last chosen TID.
   // We skip condition (c) (epoch) as we don't implement Silo's epoch GC.
   uint64_t max_tid = tms->last_commit_tid;
