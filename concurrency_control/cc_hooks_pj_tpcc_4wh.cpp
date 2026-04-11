@@ -686,6 +686,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   int step;
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
+  (void)step;  // step published in cc_post_op, not here
   // Per the paper (§4.2): "we consolidate the two kinds of wait actions
   // into one. Polyjuice uses the wait action corresponding to the next
   // access-id if early-validation is enabled for the current access-id."
@@ -700,10 +701,6 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       tms->status = TXN_ABORTED;
       return Abort;
     }
-  }
-  // All read logic (deps, read entry, data copy) handled in cc_post_op.
-  if (step > tms->step) {
-    tms->step = step;
   }
   return RCOK;
 }
@@ -774,6 +771,9 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
       tms->reads[tms->read_count] = {orig, get_tid(rs), false};
       tms->read_count++;
     }
+  }
+  if (step > tms->step) {
+    tms->step = step;
   }
   if (policy->early_validation) {
     tms->pending_piece_validation = true;
