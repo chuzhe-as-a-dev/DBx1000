@@ -174,6 +174,25 @@ static inline void spin_lock(RowState* s) {
 }
 static inline void unlock(RowState* s) { s->tid_word &= ~LOCK_BIT; }
 
+// Silo-style OCC snapshot: copy orig_row data into dest while ensuring the
+// row isn't being modified. Spins until tid_word is stable across the copy.
+// Returns the observed tid (without LOCK_BIT).
+static inline uint64_t occ_snapshot(row_t* orig, row_t* dest) {
+  RowState* rs = (RowState*)orig->cc_row_state;
+  uint64_t v, v2;
+  do {
+    v = rs->tid_word;
+    while (v & LOCK_BIT) {
+      PAUSE
+      v = rs->tid_word;
+    }
+    dest->copy(orig);
+    COMPILER_BARRIER
+    v2 = rs->tid_word;
+  } while (v != v2);
+  return v & ~LOCK_BIT;
+}
+
 // ---- Per-txn state ----
 // TxnManState is allocated once per txn_man (on first use) and reused across
 // transactions. Per-txn fields are reset in cc_pre_txn; persistent fields
@@ -740,23 +759,22 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
         tms->reads[tms->read_count] = {orig, UINT64_MAX, /*dirty=*/true};
         tms->read_count++;
       } else {
-        // No dirty data — snapshot orig_row for isolation.
-        uint64_t tid = get_tid(rs);
         unlock(rs);
+        // No dirty data — OCC snapshot of orig_row.
         row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
         copy->init(orig->get_table(), orig->get_part_id());
-        copy->copy(orig);
+        uint64_t tid = occ_snapshot(orig, copy);
         *local_row_out = copy;
         tms->reads[tms->read_count] = {orig, tid, false};
         tms->read_count++;
       }
     } else {
-      // CLEAN_READ: snapshot orig_row for isolation, record tid.
+      // CLEAN_READ: OCC snapshot of orig_row.
       row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
       copy->init(orig->get_table(), orig->get_part_id());
-      copy->copy(orig);
+      uint64_t tid = occ_snapshot(orig, copy);
       *local_row_out = copy;
-      tms->reads[tms->read_count] = {orig, get_tid(rs), false};
+      tms->reads[tms->read_count] = {orig, tid, false};
       tms->read_count++;
     }
   }
@@ -765,16 +783,16 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
     if (tms->write_count >= MAX_ACCESSES || tms->read_count >= MAX_ACCESSES) {
       return Abort;
     }
-    // Writes go to a local copy; orig_row is untouched until commit.
+    // Writes go to a local copy via OCC snapshot; orig_row untouched until commit.
     row_t* local_copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
     local_copy->init(orig->get_table(), orig->get_part_id());
-    local_copy->copy(orig);
+    uint64_t tid = occ_snapshot(orig, local_copy);
     *local_row_out = local_copy;
     bool to_expose = (policy->write_visibility == 1);
     tms->writes[tms->write_count] = {orig, local_copy, to_expose, false};
     tms->write_count++;
     // Writes implicitly read — record for validation.
-    tms->reads[tms->read_count] = {orig, get_tid(rs), false};
+    tms->reads[tms->read_count] = {orig, tid, false};
     tms->read_count++;
   }
 
