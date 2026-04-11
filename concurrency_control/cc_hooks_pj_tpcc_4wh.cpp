@@ -677,8 +677,9 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
 }
 
 RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
+  (void)orig;
+  (void)type;
   TxnManState* tms = (TxnManState*)txn->cc_txn_state;
-  RowState* rs = (RowState*)orig->cc_row_state;
   if (tms->status == TXN_ABORTED) {
     return Abort;
   }
@@ -700,20 +701,7 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       return Abort;
     }
   }
-  // For dirty reads, add dependency now (pre_op can abort if deps full).
-  // Read entry recording and data copy are deferred to cc_post_op.
-  if ((type == RD || type == SCAN) && policy->read_version == 1) {
-    spin_lock(rs);
-    DirtyEntry* de = rs->dirty_head;
-    if (de && de->writer != txn) {
-      if (!add_dependency(tms, de->writer, de->txn_seq,
-                          get_tms(de->writer)->txn_type, true)) {
-        unlock(rs);
-        return Abort;
-      }
-    }
-    unlock(rs);
-  }
+  // All read logic (deps, read entry, data copy) handled in cc_post_op.
   if (step > tms->step) {
     tms->step = step;
   }
@@ -733,17 +721,22 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
       spin_lock(rs);
       DirtyEntry* de = rs->dirty_head;
       if (de && de->data) {
+        bool from_other = (de->writer != txn);
+        // Add dirty-read dependency. On failure, mark aborted — next
+        // cc_pre_op or cc_pre_commit will return Abort.
+        if (from_other &&
+            !add_dependency(tms, de->writer, de->txn_seq,
+                            get_tms(de->writer)->txn_type, true)) {
+          tms->status = TXN_ABORTED;
+        }
         // Copy dirty data into a local row for the txn to use.
         uint32_t sz = orig->get_tuple_size();
         row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
         copy->init(orig->get_table(), orig->get_part_id());
         memcpy(copy->get_data(), de->data, sz);
-        bool from_other = (de->writer != txn);
         unlock(rs);
         *local_row_out = copy;
         txn->accesses[txn->row_cnt]->data = copy;
-        // Record read entry. Dirty reads use sentinel tid (validated
-        // via dependency tracking, not tid comparison).
         if (tms->read_count < MAX_ACCESSES) {
           tms->reads[tms->read_count] = {orig, UINT64_MAX, from_other};
           tms->read_count++;
