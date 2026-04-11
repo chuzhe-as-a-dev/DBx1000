@@ -702,34 +702,34 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   }
   if (type == RD || type == SCAN) {
     if (policy->read_version == 1) {
-      // DIRTY_READ: read latest uncommitted version from dirty list
+      // DIRTY_READ: read latest version from dirty list (if any).
       spin_lock(rs);
       DirtyEntry* de = rs->dirty_head;
-      // Find the latest entry from a different, still-running txn
-      while (de && (de->writer == txn)) {
-        de = de->next;
-      }
       if (de) {
-        TxnManState* writer_state = (TxnManState*)de->writer->cc_txn_state;
-        if (writer_state && writer_state->status == TXN_RUNNING) {
+        if (de->writer != txn) {
+          // Other txn's dirty write — add dependency for cascade abort.
+          // No status check: dependency tracking at commit time handles
+          // all cases (writer committed/aborted/still running).
           if (!add_dependency(tms, de->writer, de->txn_seq,
-                              writer_state->txn_type, true)) {
+                              get_tms(de->writer)->txn_type, true)) {
             unlock(rs);
             return Abort;
           }
-          uint64_t tid = get_tid(rs);
-          unlock(rs);
-          if (tms->read_count < MAX_ACCESSES) {
-            tms->reads[tms->read_count] = {orig, tid, true};
-            tms->read_count++;
-          }
-          if (step > tms->step) {
-            tms->step = step;
-          }
-          return RCOK;
         }
+        // Own or other's dirty entry — read it. For own entry, this is
+        // read-your-own-writes via dirty_head (no dependency added).
+        uint64_t tid = get_tid(rs);
+        unlock(rs);
+        if (tms->read_count < MAX_ACCESSES) {
+          tms->reads[tms->read_count] = {orig, tid, de->writer != txn};
+          tms->read_count++;
+        }
+        if (step > tms->step) {
+          tms->step = step;
+        }
+        return RCOK;
       }
-      // No valid dirty data available — fall back to clean read
+      // No dirty data — fall back to clean read.
       uint64_t tid = get_tid(rs);
       unlock(rs);
       if (tms->read_count < MAX_ACCESSES) {
@@ -768,15 +768,11 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
   if (type == RD || type == SCAN) {
-    // For dirty reads: copy dirty data into a local row for the txn to use
-    if (policy->read_version == 1 && tms->read_count > 0 &&
-        tms->reads[tms->read_count - 1].dirty) {
+    // If cc_pre_op found a dirty entry (own or other's), copy its data
+    // into a local row for the txn to use.
+    if (policy->read_version == 1 && rs->dirty_head) {
       spin_lock(rs);
-      // Find the latest dirty entry from a different txn
       DirtyEntry* de = rs->dirty_head;
-      while (de && de->writer == txn) {
-        de = de->next;
-      }
       if (de && de->data) {
         uint32_t sz = orig->get_tuple_size();
         row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
