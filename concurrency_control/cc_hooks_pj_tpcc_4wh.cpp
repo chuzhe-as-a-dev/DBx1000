@@ -700,49 +700,19 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
       return Abort;
     }
   }
-  if (type == RD || type == SCAN) {
-    if (policy->read_version == 1) {
-      // DIRTY_READ: read latest version from dirty list (if any).
-      spin_lock(rs);
-      DirtyEntry* de = rs->dirty_head;
-      if (de) {
-        if (de->writer != txn) {
-          // Other txn's dirty write — add dependency for cascade abort.
-          // No status check: dependency tracking at commit time handles
-          // all cases (writer committed/aborted/still running).
-          if (!add_dependency(tms, de->writer, de->txn_seq,
-                              get_tms(de->writer)->txn_type, true)) {
-            unlock(rs);
-            return Abort;
-          }
-        }
-        // Own or other's dirty entry — read it. For own entry, this is
-        // read-your-own-writes via dirty_head (no dependency added).
+  // For dirty reads, add dependency now (pre_op can abort if deps full).
+  // Read entry recording and data copy are deferred to cc_post_op.
+  if ((type == RD || type == SCAN) && policy->read_version == 1) {
+    spin_lock(rs);
+    DirtyEntry* de = rs->dirty_head;
+    if (de && de->writer != txn) {
+      if (!add_dependency(tms, de->writer, de->txn_seq,
+                          get_tms(de->writer)->txn_type, true)) {
         unlock(rs);
-        if (tms->read_count < MAX_ACCESSES) {
-          // tid unused for dirty reads (validated via deps), use sentinel.
-          tms->reads[tms->read_count] = {orig, UINT64_MAX, de->writer != txn};
-          tms->read_count++;
-        }
-      } else {
-        // No dirty data — fall back to clean read.
-        uint64_t tid = get_tid(rs);
-        unlock(rs);
-        if (tms->read_count < MAX_ACCESSES) {
-          tms->reads[tms->read_count] = {orig, tid, false};
-          tms->read_count++;
-        }
-      }
-    } else {
-      // CLEAN_READ: record current tid for validation at commit time.
-      // No double-read protocol needed here — the actual data read happens
-      // after cc_pre_op returns (in txn code), so we can't bracket it.
-      // Commit-time validate_reads catches any concurrent modifications.
-      if (tms->read_count < MAX_ACCESSES) {
-        tms->reads[tms->read_count] = {orig, get_tid(rs), false};
-        tms->read_count++;
+        return Abort;
       }
     }
+    unlock(rs);
   }
   if (step > tms->step) {
     tms->step = step;
@@ -758,21 +728,40 @@ void cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
   if (type == RD || type == SCAN) {
-    // If cc_pre_op found a dirty entry (own or other's), copy its data
-    // into a local row for the txn to use.
-    if (policy->read_version == 1 && rs->dirty_head) {
+    if (policy->read_version == 1) {
+      // DIRTY_READ path: check dirty_head for uncommitted data.
       spin_lock(rs);
       DirtyEntry* de = rs->dirty_head;
       if (de && de->data) {
+        // Copy dirty data into a local row for the txn to use.
         uint32_t sz = orig->get_tuple_size();
         row_t* copy = (row_t*)_mm_malloc(sizeof(row_t), 64);
         copy->init(orig->get_table(), orig->get_part_id());
         memcpy(copy->get_data(), de->data, sz);
+        bool from_other = (de->writer != txn);
         unlock(rs);
         *local_row_out = copy;
         txn->accesses[txn->row_cnt]->data = copy;
+        // Record read entry. Dirty reads use sentinel tid (validated
+        // via dependency tracking, not tid comparison).
+        if (tms->read_count < MAX_ACCESSES) {
+          tms->reads[tms->read_count] = {orig, UINT64_MAX, from_other};
+          tms->read_count++;
+        }
       } else {
+        // No dirty data — clean read from orig_row (default local_row_out).
+        uint64_t tid = get_tid(rs);
         unlock(rs);
+        if (tms->read_count < MAX_ACCESSES) {
+          tms->reads[tms->read_count] = {orig, tid, false};
+          tms->read_count++;
+        }
+      }
+    } else {
+      // CLEAN_READ: record tid for commit-time validation.
+      if (tms->read_count < MAX_ACCESSES) {
+        tms->reads[tms->read_count] = {orig, get_tid(rs), false};
+        tms->read_count++;
       }
     }
   }
