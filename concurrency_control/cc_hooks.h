@@ -36,6 +36,11 @@ class base_query;
 void cc_init_row_state(row_t* row);
 void cc_free_row_state(row_t* row);
 
+// ---- Per-txn_man initialization ----------------------------------------
+// Called once from txn_man::init(). Use for allocating persistent per-worker
+// CC state (e.g., TxnManState in Polyjuice).
+void cc_init_txn_man(txn_man* txn);
+
 // ---- Per-transaction setup/teardown in thread_t::run() -----------------
 // Covers: timestamp allocation, partition lock acquisition, ts registration
 // with glob_manager.  Called around run_txn().

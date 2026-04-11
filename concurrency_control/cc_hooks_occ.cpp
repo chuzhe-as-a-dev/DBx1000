@@ -52,6 +52,7 @@ void cc_free_row_state(row_t* row) {
   }
 }
 
+void cc_init_txn_man(txn_man*) {}
 void cc_global_init() {}
 
 // ---- Transaction setup ---------------------------------------------------

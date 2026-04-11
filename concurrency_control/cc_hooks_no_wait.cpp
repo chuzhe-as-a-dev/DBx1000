@@ -45,6 +45,7 @@ void cc_post_txn(thread_t* thd, txn_man* txn, RC rc) {
   (void)rc;
 }
 
+void cc_init_txn_man(txn_man*) {}
 void cc_global_init() {}
 
 RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {

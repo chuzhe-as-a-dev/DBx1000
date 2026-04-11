@@ -575,6 +575,12 @@ void cc_free_row_state(row_t* r) {
 }
 void cc_global_init() {}
 
+void cc_init_txn_man(txn_man* tx) {
+  auto* tms = (TxnManState*)_mm_malloc(sizeof(TxnManState), 64);
+  new (tms) TxnManState{};
+  tx->cc_txn_state = tms;
+}
+
 // ---- Learned adaptive backoff (Polyjuice §4.3) ----
 // Per-thread backoff state, adjusted using learned multipliers from the policy.
 // On abort: backoff *= (1 + x * alpha), then spin for `backoff` nop_pauses.
@@ -628,13 +634,9 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
     uint64_t spins = bs.backoff;
     while (spins--) PAUSE
   }
-  // Reuse TxnManState across transactions; allocate on first use.
+  // TxnManState allocated in cc_init_txn_man, reused across transactions.
   TxnManState* tms = get_tms(tx);
-  if (!tms) {
-    tms = (TxnManState*)_mm_malloc(sizeof(TxnManState), 64);
-    new (tms) TxnManState{};
-    tx->cc_txn_state = tms;
-  }
+  assert(tms);
   // Increment persistent txn_id; reset per-txn fields.
   tms->txn_id = tms->txn_id + 1;
   tms->txn_type = txn_type;

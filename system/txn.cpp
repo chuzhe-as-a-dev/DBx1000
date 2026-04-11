@@ -51,6 +51,8 @@ void txn_man::init(thread_t* h_thd, workload* h_wl, uint64_t thd_id) {
       extra._atomic_timestamp = (g_params["atomic_timestamp"] == "true");
     } else if constexpr (A == CCAlg::Silo) {
       extra._cur_tid = 0;
+    } else if constexpr (A == CCAlg::PerOp) {
+      cc_init_txn_man(this);
     }
   }();
 }
