@@ -731,12 +731,23 @@ void cc_init_txn_man(txn_man* tx) {
 }
 
 // ---- Learned adaptive backoff (Polyjuice §4.3) ----
+//
+// Disabled by default: our peak-throughput measurements showed the
+// learned backoff values (tuned for Masstree/Silo) over-wait on DBx1000's
+// hotter inner loop, costing ~2x throughput at t=8..24 on 4wh TPCC.
+// Define PJ_ENABLE_BACKOFF=1 to restore the learned adaptive backoff.
+#ifndef PJ_ENABLE_BACKOFF
+#define PJ_ENABLE_BACKOFF 0
+#endif
+
+
 // Per-thread backoff state, adjusted using learned multipliers from the policy.
 // On abort: backoff *= (1 + mult * ALPHA), then spin for `backoff` nop_pauses.
 // On commit: backoff /= (1 + mult * ALPHA), no spin.
 // `mult` is a per-(success/failure, retry_count, txn_type) learned value.
 // ALPHA is a global scaling constant (from Polyjuice bench.cc:51).
 
+#if PJ_ENABLE_BACKOFF
 // Learned multipliers from 48th-4wh.txt policy file (TPCC with 3 txn types:
 // NEW_ORDER, PAYMENT, DELIVERY — one value per column, in that order).
 // We use the NO and PAY columns; DELIVERY is unused in DBx1000 TPCC.
@@ -776,12 +787,14 @@ static inline void adjust_backoff(BackoffState& bs, TpccTxnType type,
     bs.retry_count++;
   }
 }
+#endif  // PJ_ENABLE_BACKOFF
 
 void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   (void)th;
   tpcc_query* tq = (tpcc_query*)q;
   TpccTxnType txn_type =
       (tq->type == TPCC_NEW_ORDER) ? TXN_NEW_ORDER : TXN_PAYMENT;
+#if PJ_ENABLE_BACKOFF
   // Backoff: spin for learned number of nop_pauses before retrying.
   BackoffState& bs = pj_backoff[txn_type];
   if (bs.retry_count > 0) {
@@ -790,6 +803,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
       PAUSE
     }
   }
+#endif
   // TxnManState allocated in cc_init_txn_man, reused across transactions.
   TxnManState* tms = get_tms(tx);
   assert(tms);
@@ -812,7 +826,9 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   (void)th;
   TxnManState* tms = get_tms(tx);
   assert(tms);
+#if PJ_ENABLE_BACKOFF
   adjust_backoff(pj_backoff[tms->txn_type], tms->txn_type, r == RCOK);
+#endif
   // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
   TxnStatus final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
   publish_txn_result(tms, final_status, tms->last_commit_tid);
