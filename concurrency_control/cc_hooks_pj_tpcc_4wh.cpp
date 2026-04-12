@@ -1,6 +1,29 @@
 // cc_hooks_pj_tpcc_4wh.cpp — Faithful Polyjuice learned policy.
 // Dirty reads, dependency tracking, piece boundaries, atomic final commit.
 // orig_row NEVER modified until final commit. Writes go to local copies.
+//
+// Serializability correctness argument:
+//   - Clean reads: Silo-style OCC. Record tid at read time; at commit,
+//     lock write rows (sorted), validate all read tids unchanged, compute
+//     commit_tid > all observed tids, install writes, unlock.
+//   - Dirty reads: dependency tracking. Reader adds dep on writer; at
+//     pre_commit, waits for dep to finish. If writer aborted → cascade
+//     abort. If writer committed → validate row.tid_word == writer's
+//     commit_tid (no intervening writes). If stale → abort.
+//   - Write-write ordering: later writer records w-w dep on earlier
+//     uncommitted writer seen in dirty_head during piece validation.
+//     Waits for earlier writer to finish before committing.
+//   - Piece validation: early detection of stale reads within a piece.
+//     Exposes PUBLIC writes to dirty_head for pipelining. Does NOT
+//     advance tid_word (only final_commit does).
+//
+// Correctness assumptions (not enforced, must be maintained by workload):
+//   1. No read-your-own-writes: a txn must not re-read a row it has
+//      written (tpcc_txn_pj.cpp does not do this).
+//   2. Same row not written in multiple pieces by the same txn (dirty_head
+//      cleanup in final_commit removes only the first matching entry).
+//   3. No phantom protection (range queries not handled; TPCC uses only
+//      primary-key lookups).
 
 #include <mm_malloc.h>
 
