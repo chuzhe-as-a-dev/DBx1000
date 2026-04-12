@@ -117,6 +117,9 @@ static constexpr std::array<OpMapping, 2> NO_PREFIX = {{
 static constexpr OpMapping NO_ITEM = {3, 4};        // acc_id 3
 static constexpr OpMapping NO_STOCK = {5, 6};       // acc_ids 4+5 consolidated
 static constexpr OpMapping NO_CUSTOMER = {10, 11};  // acc_id 10
+// Max step values per txn type (published at final commit to unblock waiters).
+static constexpr int NO_MAX_STEP = 11;  // new_order: customer RD is last
+static constexpr int PAY_MAX_STEP = 7;  // payment: acc_id 17 (history insert)
 
 // payment layout: 3 fixed ops, no loops.
 static constexpr std::array<OpMapping, 3> PAY_OPS = {{
@@ -157,7 +160,7 @@ static inline const PolicyEntry* lookup_policy(TpccTxnType txn_type,
 }
 
 // ---- Per-row state ----
-#define LOCK_BIT (1ULL << 63)
+static constexpr uint64_t LOCK_BIT = 1ULL << 63;
 
 // Linked list of uncommitted write entries per row. Multiple transactions
 // can have exposed (but uncommitted) writes on the same row. The head of
@@ -292,8 +295,8 @@ struct WriteEntry {
   bool to_expose;  // true if write_visibility == PUBLIC (expose at validation)
   bool exposed;    // true if dirty data has been exposed via early-validation
 };
-#define MAX_ACCESSES 64
-#define MAX_DEPS 64
+static constexpr int MAX_ACCESSES = 64;
+static constexpr int MAX_DEPS = 64;
 struct TxnManState {
   // -- Per-txn fields (reset each transaction) --
   TpccTxnType txn_type;
@@ -457,6 +460,8 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy = nullptr) {
       }
     }
 
+    // Pre-commit waits (policy=null) use a longer timeout since we're
+    // waiting for the dep to fully commit, not just reach a step.
     uint64_t timeout = policy ? WAIT_TIMEOUT : WAIT_TIMEOUT * 10;
     uint64_t t0 = get_sys_clock();
     while (true) {
@@ -630,6 +635,10 @@ static RC final_commit(txn_man* txn) {
   if (!wlocks.lock_sorted(tms, 0, tms->write_count)) {
     return Abort;
   }
+  // NOTE: validate_reads may convert dirty reads to clean reads in-place
+  // (setting reads[i].dirty=false, reads[i].tid=dep_commit_tid) when the
+  // dep has committed. This is intentional — the converted entries then
+  // participate in the normal tid validation below.
   if (!validate_reads(tms, 0, tms->read_count, 0, tms->write_count,
                       /*all_deps_resolved=*/true)) {
     wlocks.unlock_all(tms);
@@ -676,7 +685,7 @@ static RC final_commit(txn_man* txn) {
     }
   }
   wlocks.unlock_all(tms);
-  tms->step = (tms->txn_type == TXN_NEW_ORDER) ? 11 : 7;
+  tms->step = (tms->txn_type == TXN_NEW_ORDER) ? NO_MAX_STEP : PAY_MAX_STEP;
   return RCOK;
 }
 
