@@ -217,7 +217,9 @@ struct Dependency {
 struct ReadEntry {
   row_t* row;
   uint64_t tid;
-  bool dirty;  // true if this read was a dirty read
+  bool dirty;              // true if this read was a dirty read
+  txn_man* dirty_writer;   // writer of the dirty entry (only if dirty)
+  uint64_t dirty_txn_seq;  // writer's txn_seq (only if dirty)
 };
 struct WriteEntry {
   row_t* orig_row;
@@ -261,6 +263,8 @@ struct TxnManState {
   struct TxnResult {
     volatile uint64_t txn_seq;  // 0=uninitialized, UPDATING=write in progress
     volatile TxnStatus status;
+    volatile uint64_t commit_tid;  // Silo TID assigned at commit (for dirty
+                                   // read validation by other txns)
   };
   static constexpr int HISTORY_SIZE = 8;
   static constexpr uint64_t HISTORY_UPDATING = UINT64_MAX;
@@ -276,19 +280,26 @@ static inline TxnManState* get_tms(txn_man* tx) {
 // ---- Dependency resolution helpers ----
 
 // Publish a completed txn's outcome to the ring buffer (seqlock protocol).
-static inline void publish_txn_result(TxnManState* tms, TxnStatus status) {
+static inline void publish_txn_result(TxnManState* tms, TxnStatus status,
+                                      uint64_t commit_tid) {
   int slot = tms->history_head;
   tms->history[slot].txn_seq = TxnManState::HISTORY_UPDATING;
   COMPILER_BARRIER
   tms->history[slot].status = status;
+  tms->history[slot].commit_tid = commit_tid;
   COMPILER_BARRIER
   tms->history[slot].txn_seq = tms->txn_seq;
   tms->history_head = (slot + 1) % TxnManState::HISTORY_SIZE;
 }
 
 // Look up a txn's outcome in the writer's ring buffer.
+struct TxnResultSnapshot {
+  TxnStatus status;
+  uint64_t commit_tid;
+};
+
 static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_seq,
-                                     TxnStatus* status) {
+                                     TxnResultSnapshot* out) {
   for (int i = 0; i < TxnManState::HISTORY_SIZE; i++) {
     uint64_t id1;
 
@@ -303,10 +314,12 @@ static inline bool lookup_txn_result(TxnManState* writer_tms, uint64_t txn_seq,
 
     COMPILER_BARRIER
     TxnStatus s = writer_tms->history[i].status;
+    uint64_t ct = writer_tms->history[i].commit_tid;
     COMPILER_BARRIER
     uint64_t id2 = writer_tms->history[i].txn_seq;
     if (id1 == id2) {
-      *status = s;
+      out->status = s;
+      out->commit_tid = ct;
       return true;
     }
   }
@@ -335,19 +348,22 @@ static inline bool add_dependency(TxnManState* tms, txn_man* writer,
   return true;
 }
 
-static inline TxnStatus check_dep_status(Dependency* dep) {
+static inline TxnStatus check_dep_status(Dependency* dep,
+                                          uint64_t* commit_tid_out = nullptr) {
   TxnManState* ws = get_tms(dep->writer);
-  assert(ws);  // TxnManState is never freed; null means dep on a txn_man
-  // that never ran a transaction — should not happen.
+  assert(ws);
 
   if (ws->txn_seq == dep->txn_seq) {
     return TXN_RUNNING;
   }
 
   // Ring buffer is the authoritative source for completed txn outcomes.
-  TxnStatus status;
-  if (lookup_txn_result(ws, dep->txn_seq, &status)) {
-    return status;
+  TxnResultSnapshot snap;
+  if (lookup_txn_result(ws, dep->txn_seq, &snap)) {
+    if (commit_tid_out) {
+      *commit_tid_out = snap.commit_tid;
+    }
+    return snap.status;
   }
 
   // Not in ring buffer: either still running, or evicted.
@@ -430,11 +446,45 @@ struct WriteLockSet {
 
 // Validate reads[r_begin..r_end) against current tid_word. Rows locked
 // by writes[w_begin..w_end) are recognized as our own (LOCK_BIT OK).
-// Returns true if all reads are still valid.
 static bool validate_reads(TxnManState* tms, int r_begin, int r_end,
                            int w_begin, int w_end) {
   for (int i = r_begin; i < r_end; i++) {
     if (tms->reads[i].dirty) {
+      // Dirty read validation: check dep status and row integrity.
+      TxnManState* wms = get_tms(tms->reads[i].dirty_writer);
+      TxnResultSnapshot snap;
+      bool found = lookup_txn_result(wms, tms->reads[i].dirty_txn_seq, &snap);
+      if (found && snap.status == TXN_ABORTED) {
+        return false;  // Dep aborted → cascade abort.
+      }
+      if (found && snap.status == TXN_COMMITTED) {
+        // Dep committed: verify no one else wrote this row since.
+        RowState* drs = (RowState*)tms->reads[i].row->cc_row_state;
+        uint64_t v = drs->tid_word;
+        if (v & LOCK_BIT) {
+          bool own_write = false;
+          for (int j = w_begin; j < w_end; j++) {
+            if (tms->writes[j].orig_row == tms->reads[i].row) {
+              own_write = true;
+              break;
+            }
+          }
+          if (!own_write) {
+            return false;
+          }
+          v &= ~LOCK_BIT;
+        }
+        if (v != snap.commit_tid) {
+          return false;  // Row modified after dep committed.
+        }
+      } else if (!found) {
+        return false;  // Evicted from ring buffer → unknown, abort.
+      }
+      // Dep still running (not in ring buffer, txn_seq matches): OK for
+      // now. The dirty data source is still valid since the writer hasn't
+      // finished. Will be re-validated at final commit after waiting.
+      // TODO: could also verify dirty_head still has this writer's entry,
+      // matching Polyjuice's write_seq check.
       continue;
     }
     RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
@@ -684,7 +734,7 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   adjust_backoff(pj_backoff[tms->txn_type], tms->txn_type, r == RCOK);
   // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
   TxnStatus final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
-  publish_txn_result(tms, final_status);
+  publish_txn_result(tms, final_status, tms->last_commit_tid);
   for (int i = 0; i < tms->write_count; i++) {
     if (tms->writes[i].local_copy) {
       tms->writes[i].local_copy->free_row();
@@ -744,6 +794,8 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
 
   // Try dirty read if policy says so (RD/SCAN only).
   bool dirty = false;
+  txn_man* dirty_writer = nullptr;
+  uint64_t dirty_txn_seq = 0;
   if ((type == RD || type == SCAN) && policy->read_version == 1) {
     spin_lock(rs);
     DirtyEntry* de = rs->dirty_head;
@@ -757,6 +809,8 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
       }
       memcpy(copy->get_data(), de->data, orig->get_tuple_size());
       dirty = true;
+      dirty_writer = de->writer;
+      dirty_txn_seq = de->txn_seq;
     }
     unlock(rs);
   }
@@ -770,7 +824,8 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
   *local_row_out = copy;
 
   // Record read entry (all ops implicitly read).
-  tms->reads[tms->read_count] = {orig, dirty ? UINT64_MAX : tid, dirty};
+  tms->reads[tms->read_count] = {orig, tid, dirty, dirty_writer,
+                                  dirty_txn_seq};
   tms->read_count++;
 
   // WR: also record write entry.
@@ -791,7 +846,7 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
 
 RC cc_pre_commit(txn_man* txn) {
   TxnManState* tms = get_tms(txn);
-  // Flush any pending piece validation
+  // Flush any pending piece validation.
   if (tms->pending_piece_validation) {
     tms->pending_piece_validation = false;
     if (piece_validate_and_expose(txn) != RCOK) {
