@@ -149,9 +149,17 @@ struct DirtyEntry {
   DirtyEntry* next;
 };
 
+// Concurrency invariants for RowState:
+//   tid_word: read via volatile load; written atomically (CAS for lock,
+//     atomic AND for unlock, direct store only while lock is held).
+//   dirty_head: read/written only while LOCK_BIT is held. Readers in
+//     cc_post_op acquire spin_lock before traversing; writers in
+//     piece_validate_and_expose hold WriteLockSet (which holds LOCK_BIT).
+//     A COMPILER_BARRIER after linking a new entry ensures fields are
+//     visible before the entry becomes reachable via dirty_head.
 struct RowState {
   volatile uint64_t tid_word;  // version TID | LOCK_BIT
-  DirtyEntry* dirty_head;  // linked list of uncommitted writes (latest first)
+  DirtyEntry* dirty_head;     // linked list of uncommitted writes (latest first)
 };
 
 static inline uint64_t get_tid(RowState* s) { return s->tid_word & ~LOCK_BIT; }
@@ -172,11 +180,19 @@ static inline void spin_lock(RowState* s) {
     PAUSE
   }
 }
-static inline void unlock(RowState* s) { s->tid_word &= ~LOCK_BIT; }
+static inline void unlock(RowState* s) {
+  // Must be atomic: a plain RMW (&=) could lose concurrent tid_word
+  // updates from other threads (e.g., another txn's final_commit writing
+  // a new commit_tid while we clear LOCK_BIT).
+  __sync_fetch_and_and(&s->tid_word, ~LOCK_BIT);
+}
 
 // Silo-style OCC snapshot: copy orig_row data into dest while ensuring the
 // row isn't being modified. Spins until tid_word is stable across the copy.
 // Returns the observed tid (without LOCK_BIT).
+// Thread-safety: reads tid_word (volatile) and row data without locks.
+// If a concurrent writer holds LOCK_BIT, we spin. If a writer commits
+// between our two tid_word reads, we detect the change and retry.
 static inline uint64_t occ_snapshot(row_t* orig, row_t* dest) {
   RowState* rs = (RowState*)orig->cc_row_state;
   uint64_t v, v2;
@@ -198,6 +214,22 @@ static inline uint64_t occ_snapshot(row_t* orig, row_t* dest) {
 // transactions. Per-txn fields are reset in cc_pre_txn; persistent fields
 // (txn_seq, history ring buffer) survive across transactions for dependency
 // resolution.
+//
+// Concurrency invariants:
+//   - Per-txn fields (txn_type, ol_cnt, deps, reads, writes, piece_*,
+//     pending_piece_validation): written only by the owning thread. Not
+//     read by other threads. No synchronization needed.
+//   - step: written by owner (cc_post_op, final_commit), read by other
+//     threads in do_wait. Declared volatile for visibility. On x86 (TSO),
+//     volatile stores are immediately visible to other cores. On weaker
+//     architectures, consider using std::atomic with release/acquire.
+//   - txn_seq: written by owner (cc_pre_txn), read by other threads in
+//     check_dep_status. Declared volatile. Same TSO note as step.
+//   - history[]: written by owner (publish_txn_result) using seqlock
+//     protocol (txn_seq as version). Read by other threads in
+//     lookup_txn_result with double-read validation.
+//   - last_commit_tid: written by owner (final_commit), read by other
+//     threads via history[].commit_tid after publish_txn_result copies it.
 enum TxnStatus {
   TXN_RUNNING = 0,
   TXN_COMMITTED = 1,
