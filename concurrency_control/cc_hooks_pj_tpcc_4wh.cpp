@@ -724,12 +724,34 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
   TxnStatus final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
   publish_txn_result(tms, final_status, tms->last_commit_tid);
-  for (int i = 0; i < tms->write_count; i++) {
-    if (tms->writes[i].local_copy) {
-      tms->writes[i].local_copy->free_row();
-      _mm_free(tms->writes[i].local_copy);
+
+  // On abort, remove any exposed dirty entries from rows' dirty_head lists.
+  // (On commit, final_commit already removed them when installing data.)
+  if (r != RCOK) {
+    for (int i = 0; i < tms->write_count; i++) {
+      if (!tms->writes[i].exposed) {
+        continue;
+      }
+      row_t* orig = tms->writes[i].orig_row;
+      RowState* rs = (RowState*)orig->cc_row_state;
+      spin_lock(rs);
+      DirtyEntry** pp = &rs->dirty_head;
+      while (*pp) {
+        if ((*pp)->writer == tx) {
+          DirtyEntry* victim = *pp;
+          *pp = victim->next;
+          free(victim->data);
+          free(victim);
+          break;
+        }
+        pp = &(*pp)->next;
+      }
+      unlock(rs);
     }
   }
+
+  // Local copies (reads and writes) are freed in cc_release_op, which
+  // receives each access's local pointer and can free them uniformly.
 }
 
 RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
@@ -850,25 +872,11 @@ RC cc_pre_commit(txn_man* txn) {
 
 void cc_release_op(txn_man* txn, row_t* orig, row_t* local, access_t type,
                    int op) {
+  (void)txn;
   (void)op;
-  if (type == XP) {
-    // Abort path: remove our entry from dirty list
-    RowState* rs = (RowState*)orig->cc_row_state;
-    spin_lock(rs);
-    DirtyEntry** pp = &rs->dirty_head;
-    while (*pp) {
-      if ((*pp)->writer == txn) {
-        DirtyEntry* victim = *pp;
-        *pp = victim->next;
-        free(victim->data);
-        free(victim);
-        break;
-      }
-      pp = &(*pp)->next;
-    }
-    unlock(rs);
-  }
-  if ((type == RD || type == SCAN) && local && local != orig) {
+  // Free local copy. Dirty entry cleanup is handled in cc_post_txn.
+  // type is WR (commit) or XP (abort) for writes, RD/SCAN for reads.
+  if (local && local != orig) {
     local->free_row();
     _mm_free(local);
   }
