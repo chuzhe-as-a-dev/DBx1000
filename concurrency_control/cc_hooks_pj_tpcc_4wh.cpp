@@ -372,21 +372,24 @@ static inline TxnStatus check_dep_status(Dependency* dep,
 
 // ---- Wait ----
 static const uint64_t WAIT_TIMEOUT = 100000;
-static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
-  // Wait values come from the policy entry. Per §4.2, if the previous access
-  // had early_validation set, this entry's wait values serve as the
-  // pre-validation wait (consolidated with the pre-access wait).
+// Wait on dependencies. If policy is provided, wait until each dep reaches
+// its policy-specified step target. If policy is null (pre-commit), wait
+// until each dep finishes (commit/abort).
+static RC do_wait(TxnManState* tms, const PolicyEntry* policy = nullptr) {
   for (int d = 0; d < tms->dep_count; d++) {
     Dependency* dep = &tms->deps[d];
-    // Policy wait targets are Polyjuice local step values (per-txn-type).
-    // Use dep_txn_type captured at dependency creation to avoid racing with
-    // the writer starting a new txn of a different type.
-    int target = (dep->dep_txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
-                                                      : policy->wait_payment;
-    if (!target) {
-      continue;
+
+    // Determine wait target from policy, or 0 to wait until finished.
+    int target = 0;
+    if (policy) {
+      target = (dep->dep_txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
+                                                     : policy->wait_payment;
+      if (!target) {
+        continue;
+      }
     }
 
+    uint64_t timeout = policy ? WAIT_TIMEOUT : WAIT_TIMEOUT * 10;
     uint64_t t0 = get_sys_clock();
     while (true) {
       TxnStatus s = check_dep_status(dep);
@@ -396,10 +399,10 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy) {
         }
         break;
       }
-      if (get_tms(dep->writer)->step >= target) {
+      if (target && get_tms(dep->writer)->step >= target) {
         break;
       }
-      if (get_sys_clock() - t0 > WAIT_TIMEOUT) {
+      if (get_sys_clock() - t0 > timeout) {
         return Abort;
       }
       PAUSE
@@ -450,42 +453,23 @@ static bool validate_reads(TxnManState* tms, int r_begin, int r_end,
                            int w_begin, int w_end) {
   for (int i = r_begin; i < r_end; i++) {
     if (tms->reads[i].dirty) {
-      // Dirty read validation: check dep status and row integrity.
-      TxnManState* wms = get_tms(tms->reads[i].dirty_writer);
-      TxnResultSnapshot snap;
-      bool found = lookup_txn_result(wms, tms->reads[i].dirty_txn_seq, &snap);
-      if (found && snap.status == TXN_ABORTED) {
-        return false;  // Dep aborted → cascade abort.
+      // Dirty read validation (Polyjuice §4.2 early-validation).
+      Dependency dep = {tms->reads[i].dirty_writer,
+                        tms->reads[i].dirty_txn_seq, {}, true};
+      uint64_t dep_commit_tid = 0;
+      TxnStatus s = check_dep_status(&dep, &dep_commit_tid);
+      if (s == TXN_ABORTED || s == TXN_UNKNOWN) {
+        return false;  // Dep aborted or evicted → cascade abort.
       }
-      if (found && snap.status == TXN_COMMITTED) {
-        // Dep committed: verify no one else wrote this row since.
-        RowState* drs = (RowState*)tms->reads[i].row->cc_row_state;
-        uint64_t v = drs->tid_word;
-        if (v & LOCK_BIT) {
-          bool own_write = false;
-          for (int j = w_begin; j < w_end; j++) {
-            if (tms->writes[j].orig_row == tms->reads[i].row) {
-              own_write = true;
-              break;
-            }
-          }
-          if (!own_write) {
-            return false;
-          }
-          v &= ~LOCK_BIT;
-        }
-        if (v != snap.commit_tid) {
-          return false;  // Row modified after dep committed.
-        }
-      } else if (!found) {
-        return false;  // Evicted from ring buffer → unknown, abort.
+      if (s == TXN_COMMITTED) {
+        // Dep committed: convert to clean read with dep's commit_tid
+        // and fall through to normal tid validation below.
+        tms->reads[i].dirty = false;
+        tms->reads[i].tid = dep_commit_tid;
+      } else {
+        // Dep still running: dirty data source still valid.
+        continue;
       }
-      // Dep still running (not in ring buffer, txn_seq matches): OK for
-      // now. The dirty data source is still valid since the writer hasn't
-      // finished. Will be re-validated at final commit after waiting.
-      // TODO: could also verify dirty_head still has this writer's entry,
-      // matching Polyjuice's write_seq check.
-      continue;
     }
     RowState* rs = (RowState*)tms->reads[i].row->cc_row_state;
     uint64_t v = rs->tid_word;
@@ -853,23 +837,9 @@ RC cc_pre_commit(txn_man* txn) {
       return Abort;
     }
   }
-  // Wait for all dependencies to finish
-  for (int d = 0; d < tms->dep_count; d++) {
-    Dependency* dep = &tms->deps[d];
-    uint64_t t0 = get_sys_clock();
-    while (true) {
-      TxnStatus s = check_dep_status(dep);
-      if (s != TXN_RUNNING) {
-        if ((s == TXN_ABORTED || s == TXN_UNKNOWN) && dep->from_dirty_read) {
-          return Abort;
-        }
-        break;
-      }
-      if (get_sys_clock() - t0 > WAIT_TIMEOUT * 10) {
-        return Abort;
-      }
-      PAUSE
-    }
+  // Wait for all dependencies to finish (no step target = wait until done).
+  if (do_wait(tms) != RCOK) {
+    return Abort;
   }
   return final_commit(txn);
 }
