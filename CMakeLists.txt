@@ -21,6 +21,14 @@ if(DBX_TEST_MODE)
     add_compile_definitions(MAX_TXN_PER_PART=100 SYNTH_TABLE_SIZE=40960)
 endif()
 
+# Optional overrides for config.h compile-time constants.
+# Propagate as -D<name>=<value> so #ifndef guards in config.h pick them up.
+foreach(_var MAX_TXN_PER_PART WARMUP SYNTH_TABLE_SIZE)
+    if(DEFINED ${_var})
+        add_compile_definitions(${_var}=${${_var}})
+    endif()
+endforeach()
+
 # Platform: librt
 if(UNIX AND NOT APPLE)
     find_library(RT_LIBRARY rt)
@@ -106,6 +114,23 @@ foreach(alg IN LISTS DBX_ALGS)
             $<TARGET_OBJECTS:system_${alg_lower}_${wl_lower}>
         )
         dbx_link_common(${target})
+
+        # Also build a PJ-ordered TPCC variant for baseline comparison
+        # (apples-to-apples against per_op_pj_tpcc_4wh).
+        if(wl STREQUAL "TPCC")
+            set(target_pj "rundb_${alg_lower}_tpcc_pj")
+            add_executable(${target_pj}
+                $<TARGET_OBJECTS:config_common>
+                $<TARGET_OBJECTS:benchmarks_common>
+                $<TARGET_OBJECTS:storage_common>
+                $<TARGET_OBJECTS:system_common>
+                ${cc_objs}
+                $<TARGET_OBJECTS:benchmarks_tpcc_${alg_lower}_pj>
+                $<TARGET_OBJECTS:storage_${alg_lower}>
+                $<TARGET_OBJECTS:system_${alg_lower}_${wl_lower}>
+            )
+            dbx_link_common(${target_pj})
+        endif()
     endforeach()
 endforeach()
 
@@ -117,12 +142,15 @@ foreach(variant IN LISTS DBX_PER_OP_VARIANTS)
             continue()
         endif()
         string(TOLOWER "${wl}" wl_lower)
-        set(target "rundb_per_op_${var_lower}_${wl_lower}")
 
-        # PJ variants use a Polyjuice-ordered TPCC implementation.
+        # PJ variants use a Polyjuice-ordered TPCC implementation; name the
+        # binary with a _pj suffix so bench.py can treat it as a separate
+        # "workload" alongside the standard tpcc binaries.
         if(var_lower MATCHES "^pj_" AND wl STREQUAL "TPCC")
+            set(target "rundb_per_op_${var_lower}_${wl_lower}_pj")
             set(_bench_objs $<TARGET_OBJECTS:benchmarks_tpcc_per_op_pj>)
         else()
+            set(target "rundb_per_op_${var_lower}_${wl_lower}")
             set(_bench_objs $<TARGET_OBJECTS:benchmarks_${wl_lower}_per_op>)
         endif()
 

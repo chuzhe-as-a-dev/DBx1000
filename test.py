@@ -77,7 +77,8 @@ for variant in per_op_variants:
         if wl in per_op_skip.get(variant, set()):
             print("SKIP execution. \talg=%s,\tworkload=%s (prototype limitation)" % (alg_name, wl))
             continue
-        binary = os.path.join(build_dir, "rundb_per_op_%s_%s" % (variant.lower(), wl.lower()))
+        suffix = "_pj" if variant.lower().startswith("pj_") and wl == "TPCC" else ""
+        binary = os.path.join(build_dir, "rundb_per_op_%s_%s%s" % (variant.lower(), wl.lower(), suffix))
         test_run(binary, alg_name, wl)
 
 os.system("rm -f temp.out")

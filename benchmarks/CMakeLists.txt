@@ -27,8 +27,13 @@ endforeach()
 
 # Polyjuice-ordered TPCC variant: uses tpcc_txn_pj.cpp instead of tpcc_txn.cpp
 # to match the operation order that Polyjuice's learned policy was trained against.
-add_library(benchmarks_tpcc_per_op_pj OBJECT
-    tpcc_query.cpp tpcc_txn_pj.cpp tpcc_wl.cpp)
-target_link_libraries(benchmarks_tpcc_per_op_pj PRIVATE dbx_includes)
-target_compile_definitions(benchmarks_tpcc_per_op_pj PRIVATE
-    CC_ALG=PER_OP WORKLOAD=TPCC)
+# Built per CC algorithm so baseline algorithms can run the same TPCC code for
+# apples-to-apples comparison against per_op_pj_tpcc_4wh.
+foreach(alg IN LISTS DBX_ALGS)
+    string(TOLOWER "${alg}" alg_lower)
+    add_library(benchmarks_tpcc_${alg_lower}_pj OBJECT
+        tpcc_query.cpp tpcc_txn_pj.cpp tpcc_wl.cpp)
+    target_link_libraries(benchmarks_tpcc_${alg_lower}_pj PRIVATE dbx_includes)
+    target_compile_definitions(benchmarks_tpcc_${alg_lower}_pj PRIVATE
+        CC_ALG=${alg} WORKLOAD=TPCC)
+endforeach()
