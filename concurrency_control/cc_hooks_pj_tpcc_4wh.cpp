@@ -349,7 +349,7 @@ static inline bool add_dependency(TxnManState* tms, txn_man* writer,
 }
 
 static inline TxnStatus check_dep_status(Dependency* dep,
-                                          uint64_t* commit_tid_out = nullptr) {
+                                         uint64_t* commit_tid_out = nullptr) {
   TxnManState* ws = get_tms(dep->writer);
   assert(ws);
 
@@ -383,7 +383,7 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy = nullptr) {
     int target = 0;
     if (policy) {
       target = (dep->dep_txn_type == TXN_NEW_ORDER) ? policy->wait_new_order
-                                                     : policy->wait_payment;
+                                                    : policy->wait_payment;
       if (!target) {
         continue;
       }
@@ -449,17 +449,20 @@ struct WriteLockSet {
 
 // Validate reads[r_begin..r_end) against current tid_word. Rows locked
 // by writes[w_begin..w_end) are recognized as our own (LOCK_BIT OK).
+// all_deps_resolved: if true (final commit), assert no dirty reads have
+// running deps — caller must have waited for all deps first.
 static bool validate_reads(TxnManState* tms, int r_begin, int r_end,
-                           int w_begin, int w_end) {
+                           int w_begin, int w_end,
+                           bool all_deps_resolved = false) {
   for (int i = r_begin; i < r_end; i++) {
     if (tms->reads[i].dirty) {
       // Dirty read validation (Polyjuice §4.2 early-validation).
-      Dependency dep = {tms->reads[i].dirty_writer,
-                        tms->reads[i].dirty_txn_seq, {}, true};
+      Dependency dep = {
+          tms->reads[i].dirty_writer, tms->reads[i].dirty_txn_seq, {}, true};
       uint64_t dep_commit_tid = 0;
       TxnStatus s = check_dep_status(&dep, &dep_commit_tid);
       if (s == TXN_ABORTED || s == TXN_UNKNOWN) {
-        return false;  // Dep aborted or evicted → cascade abort.
+        return false;
       }
       if (s == TXN_COMMITTED) {
         // Dep committed: convert to clean read with dep's commit_tid
@@ -467,7 +470,9 @@ static bool validate_reads(TxnManState* tms, int r_begin, int r_end,
         tms->reads[i].dirty = false;
         tms->reads[i].tid = dep_commit_tid;
       } else {
-        // Dep still running: dirty data source still valid.
+        // Dep still running: OK during early validation (piece boundary),
+        // but must not happen at final commit (caller should have waited).
+        assert(!all_deps_resolved);
         continue;
       }
     }
@@ -556,7 +561,8 @@ static RC final_commit(txn_man* txn) {
   if (!wlocks.lock_sorted(tms, 0, tms->write_count)) {
     return Abort;
   }
-  if (!validate_reads(tms, 0, tms->read_count, 0, tms->write_count)) {
+  if (!validate_reads(tms, 0, tms->read_count, 0, tms->write_count,
+                      /*all_deps_resolved=*/true)) {
     wlocks.unlock_all(tms);
     return Abort;
   }
@@ -702,7 +708,6 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   tms->ol_cnt = (txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
   tms->step = 0;
 
-
   tms->dep_count = 0;
   tms->read_count = 0;
   tms->write_count = 0;
@@ -808,8 +813,7 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
   *local_row_out = copy;
 
   // Record read entry (all ops implicitly read).
-  tms->reads[tms->read_count] = {orig, tid, dirty, dirty_writer,
-                                  dirty_txn_seq};
+  tms->reads[tms->read_count] = {orig, tid, dirty, dirty_writer, dirty_txn_seq};
   tms->read_count++;
 
   // WR: also record write entry.
