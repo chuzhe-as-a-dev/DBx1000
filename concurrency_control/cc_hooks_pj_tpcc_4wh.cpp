@@ -159,7 +159,7 @@ struct DirtyEntry {
 //     visible before the entry becomes reachable via dirty_head.
 struct RowState {
   volatile uint64_t tid_word;  // version TID | LOCK_BIT
-  DirtyEntry* dirty_head;     // linked list of uncommitted writes (latest first)
+  DirtyEntry* dirty_head;  // linked list of uncommitted writes (latest first)
 };
 
 static inline uint64_t get_tid(RowState* s) { return s->tid_word & ~LOCK_BIT; }
@@ -216,20 +216,30 @@ static inline uint64_t occ_snapshot(row_t* orig, row_t* dest) {
 // resolution.
 //
 // Concurrency invariants:
-//   - Per-txn fields (txn_type, ol_cnt, deps, reads, writes, piece_*,
-//     pending_piece_validation): written only by the owning thread. Not
+//   - Per-txn fields (ol_cnt, deps, reads, writes, piece_*,
+//     pending_piece_validation): written only by the owning thread, not
 //     read by other threads. No synchronization needed.
+//   - txn_type: set by owner in cc_pre_txn, constant for the txn's
+//     lifetime. Read by other threads when creating dependencies
+//     (e.g., get_tms(de->writer)->txn_type in cc_post_op). Safe because
+//     the value doesn't change while the txn is running.
 //   - step: written by owner (cc_post_op, final_commit), read by other
-//     threads in do_wait. Declared volatile for visibility. On x86 (TSO),
-//     volatile stores are immediately visible to other cores. On weaker
-//     architectures, consider using std::atomic with release/acquire.
-//   - txn_seq: written by owner (cc_pre_txn), read by other threads in
-//     check_dep_status. Declared volatile. Same TSO note as step.
+//     threads in do_wait (dep->writer's step >= target). Declared
+//     volatile. A stale read means the waiter spins one extra iteration
+//     — the next read will see the updated value. Correct on x86 (TSO);
+//     on weaker architectures, use std::atomic with release/acquire.
+//   - txn_seq: written by owner once at cc_pre_txn start, then constant
+//     for the txn's lifetime. Read by other threads in check_dep_status.
+//     A stale read (seeing old txn_seq) makes the reader think the dep
+//     txn is still running, which is safe — the reader's spin loop
+//     retries, and will see the updated txn_seq on the next iteration.
+//     The result may already be in the ring buffer for the next check.
 //   - history[]: written by owner (publish_txn_result) using seqlock
 //     protocol (txn_seq as version). Read by other threads in
 //     lookup_txn_result with double-read validation.
-//   - last_commit_tid: written by owner (final_commit), read by other
-//     threads via history[].commit_tid after publish_txn_result copies it.
+//   - last_commit_tid: written and read only by the owning thread.
+//     Copied into history[].commit_tid by publish_txn_result (value
+//     copy, not pointer — other threads read the copy, not this field).
 enum TxnStatus {
   TXN_RUNNING = 0,
   TXN_COMMITTED = 1,
@@ -385,6 +395,9 @@ static inline TxnStatus check_dep_status(Dependency* dep,
   TxnManState* ws = get_tms(dep->writer);
   assert(ws);
 
+  // Stale txn_seq read is safe: if we see the old value, we return
+  // TXN_RUNNING. The caller (do_wait) spins and retries. On the next
+  // call, we'll see the updated txn_seq and check the ring buffer.
   if (ws->txn_seq == dep->txn_seq) {
     return TXN_RUNNING;
   }
@@ -431,6 +444,7 @@ static RC do_wait(TxnManState* tms, const PolicyEntry* policy = nullptr) {
         }
         break;
       }
+      // Stale step read is safe: we just spin one more iteration.
       if (target && get_tms(dep->writer)->step >= target) {
         break;
       }
