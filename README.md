@@ -30,14 +30,26 @@ To change which algorithms or workloads are compiled, edit `DBX_ALGS` / `DBX_WOR
 
 - **CC algorithms**: `NO_WAIT`, `WAIT_DIE`, `DL_DETECT`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `TICTOC`, `SILO`, `VLL`, `HEKATON`, `PER_OP`
   > **Note:** The TicToc paper [2] only evaluated `DL_DETECT`, `NO_WAIT`, `HEKATON`, `SILO`, and `TICTOC`. The remaining built-in algorithms (`WAIT_DIE`, `TIMESTAMP`, `MVCC`, `HSTORE`, `OCC`, `VLL`) may not be fully functional.
-- **PER_OP variants**: `NOOP`, `NO_WAIT`, `OCC`, `MVCC` (edit `DBX_PER_OP_VARIANTS` in `CMakeLists.txt`)
+- **PER_OP variants**: `NOOP`, `NO_WAIT`, `OCC`, `MVCC`, `PJ_TPCC_4WH` (edit `DBX_PER_OP_VARIANTS` in `CMakeLists.txt`). `PJ_TPCC_4WH` is a Polyjuice-inspired learned CC specialized for TPCC with 4 warehouses.
 - **Workloads**: `YCSB`, `TPCC`, `TEST`
+
+For TPCC, each algorithm additionally produces a `rundb_<alg>_tpcc_pj` binary that runs `benchmarks/tpcc_txn_pj.cpp` — a Polyjuice-ordered TPCC variant used for apples-to-apples comparison against `PJ_TPCC_4WH`.
 
 Test
 ----
 
 ```bash
 python3 test.py
+```
+
+Format
+------
+
+Source files must be clang-formatted. The `format.sh` script (Docker-based, uses `xianpengshen/clang-tools:22`) applies formatting in-place; `format-check.sh` only verifies. Run `./format.sh` before committing.
+
+```bash
+./format.sh         # apply clang-format in place
+./format-check.sh   # verify formatting (CI-safe, no modifications)
 ```
 
 Run
