@@ -98,8 +98,8 @@ RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {
 // cc_post_op is called in txn_man::get_row() after access recording.
 // txn->accesses[txn->row_cnt] is the current access (row_cnt not yet
 // incremented).
-RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
-                access_t type, int op_idx) {
+RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout, access_t type,
+              int op_idx) {
   (void)type;
   OccRowState* s = (OccRowState*)orig_row->cc_row_state;
   OccTxnState* ts = (OccTxnState*)txn->cc_txn_state;

@@ -53,8 +53,8 @@ void cc_post_txn(thread_t* thd, txn_man* txn, RC rc);
 // cc_post_op: snapshot/copy decision.  May update *local_inout to a copy.
 //   Returns Abort if resources exhausted (e.g., read/write set full).
 RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx);
-RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
-              access_t type, int op_idx);
+RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout, access_t type,
+              int op_idx);
 
 // ---- Commit-time validation --------------------------------------------
 // Called from txn_man::finish() before cleanup for PER_OP.

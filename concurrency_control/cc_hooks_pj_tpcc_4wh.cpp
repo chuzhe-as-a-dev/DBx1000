@@ -740,7 +740,6 @@ void cc_init_txn_man(txn_man* tx) {
 #define PJ_ENABLE_BACKOFF 0
 #endif
 
-
 // Per-thread backoff state, adjusted using learned multipliers from the policy.
 // On abort: backoff *= (1 + mult * ALPHA), then spin for `backoff` nop_pauses.
 // On commit: backoff /= (1 + mult * ALPHA), no spin.

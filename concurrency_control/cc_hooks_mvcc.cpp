@@ -173,8 +173,8 @@ RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {
   return rc;
 }
 
-RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
-                access_t type, int op_idx) {
+RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout, access_t type,
+              int op_idx) {
   (void)op_idx;
   MvccTxnState* ts = (MvccTxnState*)txn->cc_txn_state;
   MvccRowState* s = (MvccRowState*)orig_row->cc_row_state;
