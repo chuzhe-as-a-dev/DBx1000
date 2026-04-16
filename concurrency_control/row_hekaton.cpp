@@ -26,7 +26,7 @@ void Row_hekaton::init(row_t* row) {
   _his_oldest = 0;
   _exists_prewrite = false;
 
-  blatch = false;
+  __atomic_store_n(&blatch, false, __ATOMIC_RELEASE);
 }
 
 void Row_hekaton::doubleHistory() {
@@ -111,7 +111,7 @@ RC Row_hekaton::access(txn_man* txn, TsType type, row_t* row) {
     assert(false);
   }
 
-  blatch = false;
+  __atomic_store_n(&blatch, false, __ATOMIC_RELEASE);
   return rc;
 }
 
@@ -183,7 +183,7 @@ RC Row_hekaton::prepare_read(txn_man* txn, row_t* row, ts_t commit_ts) {
     }
     idx = (idx == 0) ? _his_len - 1 : idx - 1;
   }
-  blatch = false;
+  __atomic_store_n(&blatch, false, __ATOMIC_RELEASE);
   return rc;
 }
 
@@ -207,5 +207,5 @@ void Row_hekaton::post_process(txn_man* txn, ts_t commit_ts, RC rc) {
     _write_history[_his_latest].end = INF;
   }
 
-  blatch = false;
+  __atomic_store_n(&blatch, false, __ATOMIC_RELEASE);
 }
