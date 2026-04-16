@@ -6,7 +6,7 @@ See [README.md](README.md) for build/run/configuration reference.
 ## Quick Reference
 
 ```bash
-cmake -S . -B build && cmake --build build --parallel   # build
+cmake -S . -B build && cmake --build build --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"   # build
 python3 test.py                                          # test
 ./build/rundb_tictoc_ycsb -t8                            # run
 ```

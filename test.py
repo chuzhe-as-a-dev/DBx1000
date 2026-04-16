@@ -3,6 +3,7 @@
 import os, sys, subprocess, datetime, time, signal
 
 build_dir = "build"
+build_jobs = os.cpu_count() or 1
 
 # Baseline algorithms
 algs = ['DL_DETECT', 'NO_WAIT', 'HEKATON', 'SILO', 'TICTOC']
@@ -26,7 +27,7 @@ def build_all():
     if ret != 0:
         print("ERROR: cmake configure failed (see temp.out)")
         sys.exit(1)
-    ret = os.system("cmake --build %s --parallel > temp.out 2>&1" % build_dir)
+    ret = os.system("cmake --build %s --parallel %d > temp.out 2>&1" % (build_dir, build_jobs))
     if ret != 0:
         print("ERROR: build failed (see temp.out)")
         sys.exit(1)

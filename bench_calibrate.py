@@ -39,7 +39,7 @@ def build(build_dir, max_txn, warmup):
     if ret != 0:
         print(f"ERROR: cmake configure failed", file=sys.stderr)
         sys.exit(1)
-    ret = os.system(f'cmake --build {build_dir} --parallel > /dev/null 2>&1')
+    ret = os.system(f'cmake --build {build_dir} --parallel {os.cpu_count() or 1} > /dev/null 2>&1')
     if ret != 0:
         print(f"ERROR: build failed", file=sys.stderr)
         sys.exit(1)

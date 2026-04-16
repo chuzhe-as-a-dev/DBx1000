@@ -15,7 +15,7 @@ Requires CMake 3.16+ and a C++23 compiler (GCC 11+ or Clang 16+).
 
 ```bash
 cmake -S . -B build
-cmake --build build --parallel
+cmake --build build --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 ```
 
 The build produces one binary per (algorithm, workload) combination:

@@ -65,7 +65,7 @@ def build(build_dir, max_txn, warmup, log):
         f'cmake -S . -B {build_dir} -DCMAKE_BUILD_TYPE=RelWithDebInfo'
         f' -DMAX_TXN_PER_PART={max_txn} -DWARMUP={warmup}'
     )
-    build_cmd = f'cmake --build {build_dir} --parallel'
+    build_cmd = f'cmake --build {build_dir} --parallel {os.cpu_count() or 1}'
     log.write(f'$ {cmake_cmd}\n')
     log.write(f'$ {build_cmd}\n\n')
     log.flush()
