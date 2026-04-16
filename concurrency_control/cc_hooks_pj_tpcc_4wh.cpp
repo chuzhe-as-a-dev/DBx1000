@@ -121,11 +121,13 @@ static constexpr OpMapping NO_CUSTOMER = {10, 11};  // acc_id 10
 static constexpr int NO_MAX_STEP = 11;  // new_order: customer RD is last
 static constexpr int PAY_MAX_STEP = 7;  // payment: acc_id 17 (history insert)
 
-// payment layout: 3 fixed ops, no loops.
+// payment layout: 3 fixed ops, no loops. Order matches the non-commutative
+// build of Polyjuice (tpcc.cc:2705, SUPPORT_COMMUTATIVE_OP undefined), which
+// is what the 48th-4wh.txt policy was trained against.
 static constexpr std::array<OpMapping, 3> PAY_OPS = {{
-    {12, 2},  // op 0: warehouse WR  (acc_ids 11+12 consolidated)
-    {14, 4},  // op 1: district WR   (acc_ids 13+14 consolidated)
-    {16, 6},  // op 2: customer WR   (acc_ids 15+16 consolidated)
+    {12, 2},  // op 0: warehouse (acc_ids 11+12 consolidated → warehouse WR)
+    {14, 4},  // op 1: district  (acc_ids 13+14 consolidated → district WR)
+    {16, 6},  // op 2: customer  (acc_ids 15+16 consolidated → customer WR)
 }};
 
 static inline const PolicyEntry* lookup_policy(TpccTxnType txn_type,
@@ -302,6 +304,15 @@ struct TxnManState {
   TpccTxnType txn_type;
   int ol_cnt;         // order-line count (new_order only)
   volatile int step;  // current progress for wait tracking
+  // Step for the most recent access, published to `step` only at the NEXT
+  // hook call (cc_pre_op or cc_pre_commit). Deferred because in DBx1000 a
+  // write happens as a plain memory store by txn logic AFTER cc_post_op
+  // returns — at cc_post_op time the write buffer still holds pre-write
+  // data, so a waiter unblocked by an early step bump would observe stale
+  // values. Deferring ensures that by the time `step` advances, the txn
+  // has either finished the previous op's write OR is about to call the
+  // next CC hook (so downstream effects are finalized in memory).
+  int pending_step;
   Dependency deps[MAX_DEPS];
   int dep_count;
   ReadEntry reads[MAX_ACCESSES];
@@ -720,19 +731,31 @@ void cc_init_txn_man(txn_man* tx) {
 }
 
 // ---- Learned adaptive backoff (Polyjuice §4.3) ----
+//
+// Disabled by default: our peak-throughput measurements showed the
+// learned backoff values (tuned for Masstree/Silo) over-wait on DBx1000's
+// hotter inner loop, costing ~2x throughput at t=8..24 on 4wh TPCC.
+// Define PJ_ENABLE_BACKOFF=1 to restore the learned adaptive backoff.
+#ifndef PJ_ENABLE_BACKOFF
+#define PJ_ENABLE_BACKOFF 0
+#endif
+
 // Per-thread backoff state, adjusted using learned multipliers from the policy.
 // On abort: backoff *= (1 + mult * ALPHA), then spin for `backoff` nop_pauses.
 // On commit: backoff /= (1 + mult * ALPHA), no spin.
 // `mult` is a per-(success/failure, retry_count, txn_type) learned value.
 // ALPHA is a global scaling constant (from Polyjuice bench.cc:51).
 
-// Learned multipliers from 48th-4wh.txt policy file.
+#if PJ_ENABLE_BACKOFF
+// Learned multipliers from 48th-4wh.txt policy file (TPCC with 3 txn types:
+// NEW_ORDER, PAYMENT, DELIVERY — one value per column, in that order).
+// We use the NO and PAY columns; DELIVERY is unused in DBx1000 TPCC.
 // Dimensions: [2][3][2] = [success(1)/failure(0)][retry 0,1,>=2][NO,PAY]
 static constexpr double BACKOFF_MULT[2][3][2] = {
-    // [0] = failure (increase backoff)
-    {{8, 1}, {8, 1}, {0, 0}},
-    // [1] = success (decrease backoff)
-    {{1, 0}, {1, 4}, {4, 1}},
+    // [0] = failure (increase backoff)    file lines: "0 8 1" "2 8 1" "2 0 0"
+    {{0, 8}, {2, 8}, {2, 0}},
+    // [1] = success (decrease backoff)    file lines: "0 1 0" "0 1 4" "1 4 1"
+    {{0, 1}, {0, 1}, {1, 4}},
 };
 static constexpr double BACKOFF_ALPHA = 0.5;            // bench.cc:51
 static constexpr uint64_t BACKOFF_FLOOR = 100;          // bench.h:253
@@ -763,12 +786,14 @@ static inline void adjust_backoff(BackoffState& bs, TpccTxnType type,
     bs.retry_count++;
   }
 }
+#endif  // PJ_ENABLE_BACKOFF
 
 void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   (void)th;
   tpcc_query* tq = (tpcc_query*)q;
   TpccTxnType txn_type =
       (tq->type == TPCC_NEW_ORDER) ? TXN_NEW_ORDER : TXN_PAYMENT;
+#if PJ_ENABLE_BACKOFF
   // Backoff: spin for learned number of nop_pauses before retrying.
   BackoffState& bs = pj_backoff[txn_type];
   if (bs.retry_count > 0) {
@@ -777,6 +802,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
       PAUSE
     }
   }
+#endif
   // TxnManState allocated in cc_init_txn_man, reused across transactions.
   TxnManState* tms = get_tms(tx);
   assert(tms);
@@ -785,6 +811,7 @@ void cc_pre_txn(thread_t* th, txn_man* tx, base_query* q) {
   tms->txn_type = txn_type;
   tms->ol_cnt = (txn_type == TXN_NEW_ORDER) ? tq->ol_cnt : 0;
   tms->step = 0;
+  tms->pending_step = 0;
 
   tms->dep_count = 0;
   tms->read_count = 0;
@@ -798,7 +825,9 @@ void cc_post_txn(thread_t* th, txn_man* tx, RC r) {
   (void)th;
   TxnManState* tms = get_tms(tx);
   assert(tms);
+#if PJ_ENABLE_BACKOFF
   adjust_backoff(pj_backoff[tms->txn_type], tms->txn_type, r == RCOK);
+#endif
   // Publish outcome to ring buffer. TxnManState is NOT freed — reused next txn.
   TxnStatus final_status = (r == RCOK) ? TXN_COMMITTED : TXN_ABORTED;
   publish_txn_result(tms, final_status, tms->last_commit_tid);
@@ -839,20 +868,32 @@ RC cc_pre_op(txn_man* txn, row_t* orig, access_t type, int op) {
   int step;
   const PolicyEntry* policy =
       lookup_policy(tms->txn_type, op, tms->ol_cnt, &step);
-  (void)step;  // step published in cc_post_op, not here
+  (void)step;  // step for this op published at the NEXT hook call
+
   // Per the paper (§4.2): "we consolidate the two kinds of wait actions
   // into one. Polyjuice uses the wait action corresponding to the next
   // access-id if early-validation is enabled for the current access-id."
-  // So we wait first (using this access's wait values, which also serve
-  // as the pre-validation wait), then validate the previous piece.
+  // This wait is simultaneously (a) the pre-access wait for THIS op and
+  // (b) the pre-validation wait for the PREVIOUS piece — so it must run
+  // before piece_validate_and_expose.
   if (do_wait(tms, policy) != RCOK) {
     return Abort;
   }
+
+  // Finalize the PREVIOUS op: run any pending piece-validation (which also
+  // links exposed dirty writes into dirty_head), then publish pending_step
+  // so waiters observe our latest progress. Order matters: expose-then-
+  // advance. If we advanced step first, waiters doing dirty-reads could
+  // unblock, inspect dirty_head before expose completes, find nothing,
+  // and fall through to a clean read of stale (pre-write) data.
   if (tms->pending_piece_validation) {
     tms->pending_piece_validation = false;
     if (piece_validate_and_expose(txn) != RCOK) {
       return Abort;
     }
+  }
+  if (tms->pending_step > tms->step) {
+    tms->step = tms->pending_step;
   }
   return RCOK;
 }
@@ -923,8 +964,12 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
     tms->write_count++;
   }
 
-  if (step > tms->step) {
-    tms->step = step;
+  // Defer step publication until the next hook call — at post_op time a
+  // WR op's local copy has not yet been modified by the txn logic, so a
+  // waiter unblocked here would read stale memory. See `pending_step`
+  // doc on TxnManState.
+  if (step > tms->pending_step) {
+    tms->pending_step = step;
   }
   if (policy->early_validation) {
     tms->pending_piece_validation = true;
@@ -934,12 +979,16 @@ RC cc_post_op(txn_man* txn, row_t* orig, row_t** local_row_out, access_t type,
 
 RC cc_pre_commit(txn_man* txn) {
   TxnManState* tms = get_tms(txn);
-  // Flush any pending piece validation.
+  // Finalize the last op: flush pending piece validation, then publish the
+  // pending step so waiters observe our latest progress before we block.
   if (tms->pending_piece_validation) {
     tms->pending_piece_validation = false;
     if (piece_validate_and_expose(txn) != RCOK) {
       return Abort;
     }
+  }
+  if (tms->pending_step > tms->step) {
+    tms->step = tms->pending_step;
   }
   // Wait for all dependencies to finish (no step target = wait until done).
   if (do_wait(tms) != RCOK) {

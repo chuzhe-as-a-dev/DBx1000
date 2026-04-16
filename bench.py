@@ -83,9 +83,9 @@ def build(build_dir, max_txn, warmup, log):
     log.write('Build complete.\n\n')
     log.flush()
 
-def run_one(build_dir, alg, threads, warehouses, perc_remote_pay, perc_remote_neworder, log, raw_log):
+def run_one(build_dir, alg, threads, warehouses, perc_remote_pay, perc_remote_neworder, log, raw_log, workload='tpcc'):
     """Run a single benchmark. Returns (cmd, summary)."""
-    binary = os.path.join(build_dir, f'rundb_{alg}_tpcc')
+    binary = os.path.join(build_dir, f'rundb_{alg}_{workload}')
     if not os.path.exists(binary):
         return None, None
 
@@ -134,6 +134,8 @@ def main():
                         help='%% payments with remote customer (default 0)')
     parser.add_argument('--perc-remote-neworder', type=float, default=0,
                         help='%% new-order lines from remote warehouse (default 0)')
+    parser.add_argument('--workload', default='tpcc',
+                        help='Binary suffix (tpcc or tpcc_pj for Polyjuice-ordered TPCC)')
     parser.add_argument('--build-dir', default='build_perf')
     parser.add_argument('--results-dir', default='results',
                         help='Base directory for results (default: results)')
@@ -204,7 +206,7 @@ def main():
                 cmd, summary = run_one(
                     args.build_dir, alg, threads,
                     args.warehouses, args.perc_remote_pay, args.perc_remote_neworder,
-                    log, raw_log)
+                    log, raw_log, args.workload)
 
                 if summary is None:
                     msg = 'SKIP (missing binary or timeout)'

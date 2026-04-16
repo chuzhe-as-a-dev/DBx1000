@@ -33,8 +33,8 @@ RC cc_pre_op(txn_man* txn, row_t* orig_row, access_t type, int op_idx) {
   return RCOK;
 }
 
-RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout,
-                access_t type, int op_idx) {
+RC cc_post_op(txn_man* txn, row_t* orig_row, row_t** local_inout, access_t type,
+              int op_idx) {
   (void)txn;
   (void)orig_row;
   (void)local_inout;
