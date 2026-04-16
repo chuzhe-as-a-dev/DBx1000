@@ -16,6 +16,11 @@
 void DL_detect::init() {
   dependency = new DepThd[g_thread_cnt];
   V = g_thread_cnt;
+  for (UInt32 i = 0; i < g_thread_cnt; i++) {
+    pthread_mutex_init(&dependency[i].lock, NULL);
+    dependency[i].txnid = -1;
+    dependency[i].num_locks = 0;
+  }
 }
 
 // Records that txnid1 is waiting on the transactions in txnids[0..cnt-1].
